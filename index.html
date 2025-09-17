@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  />
+  <title>Vocabulary Flashcards</title>
+
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    *,*::before,*::after { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      margin: 0;
+      color: #111;
+      -webkit-text-size-adjust: 100%;
+    }
+    .page {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 24px;
+      padding-left: calc(24px + env(safe-area-inset-left));
+      padding-right: calc(24px + env(safe-area-inset-right));
+    }
+
+    h1 { margin-bottom: 12px; }
+    label { font-weight: 600; margin-right: 8px; }
+    select, button { font-size: 16px; }
+    .flashcard { width: 100%; max-width: 600px; height: 280px; margin: 16px auto; perspective: 1200px; }
+
+    .flashcard-inner { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform .35s ease; border-radius: 16px; }
+    .flashcard-inner.flipped { transform: rotateY(180deg); }
+    .flashcard-front, .flashcard-back {
+      position: absolute; inset: 0; display:flex; align-items:center; justify-content:center;
+      backface-visibility: hidden; -webkit-backface-visibility: hidden;
+      border: 1px solid #ddd; border-radius: 16px; padding: 18px; text-align:center;
+      font-size: clamp(18px, 3.2vw, 28px); background: #fff;
+      box-shadow: 0 8px 22px rgba(0,0,0,.06);
+    }
+    .flashcard-back { transform: rotateY(180deg); background:#fbfbff; }
+    .buttons { display:flex; gap:10px; justify-content:center; margin: 10px 0 18px; }
+    .buttons button { padding:10px 14px; border-radius:12px; border:1px solid #ccc; cursor:pointer; }
+    .study-controls { display:flex; flex-direction:column; gap:8px; align-items:center; margin-top:10px; }
+    .study-controls .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:center; }
+    .study-controls button, .study-controls select { padding:10px 14px; border-radius:12px; border:1px solid #ccc; font-size:16px; cursor:pointer; }
+    #logo { display:block; margin: 20px auto; width:80px; height:auto; opacity:.7; }
+    .error { white-space: pre-line; color:#b00020; text-align:center; }
+
+    /* Duplicate indicator */
+    .dup-flag { display:inline-block; line-height:1; vertical-align:baseline; opacity:.9; margin-left:.4rem; }
+
+    /* Dictionary helper (above card) */
+    .helper {
+      display:flex;
+      gap:8px;
+      justify-content:center;
+      align-items:center;
+      margin: 12px 0 10px;
+    }
+    .helper select,
+    .helper button {
+      padding:10px 14px;
+      border-radius:12px;
+      border:1px solid #ccc;
+      font-size:16px;
+      cursor:pointer;
+    }
+    .sr-only {
+      position:absolute;
+      left:-9999px;
+      width:1px;
+      height:1px;
+      overflow:hidden;
+    }
+  </style>
+
+  <link rel="icon" href="logo.png" type="image/png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0b57d0">
+</head>
+
+<body>
+  <div class="page">
+    <h1>Vocabulary Flashcards</h1>
+
+    <div>
+      <label for="daySelector">Select Day:</label>
+      <select id="daySelector"></select>
+    </div>
+
+    <!-- NEW: dictionary helper (ABOVE the flashcard) -->
+    <div class="helper" id="dictHelper">
+      <label for="dictChoice" class="sr-only">Choose dictionary</label>
+      <select id="dictChoice" aria-label="Choose dictionary">
+        <option value="cambridge">Cambridge Learner's Dictionary</option>
+        <option value="oxford">Oxford Learner's Dictionary</option>
+        <option value="longman">Longman Dictionary</option>
+      </select>
+      <button id="lookupBtn" aria-label="Look up this word">🔎 Look up</button>
+    </div>
+
+    <div class="flashcard" id="flashcard">
+      <div class="flashcard-inner" id="flashcardInner">
+        <div class="flashcard-front" id="cardFront">Loading…</div>
+        <div class="flashcard-back" id="cardBack"></div>
+      </div>
+    </div>
+
+    <div class="buttons">
+      <button id="prevBtn">Back</button>
+      <button id="nextBtn">Next</button>
+    </div>
+
+    <div class="study-controls">
+      <div class="row">
+        <button id="shuffleBtn" title="Shuffle order">🔀 Shuffle</button>
+        <label for="modeSelect">Study set:</label>
+        <select id="modeSelect">
+          <option value="all">All</option>
+          <option value="review">To Review</option>
+          <option value="learned">Learned</option>
+        </select>
+        <button id="resetProgressBtn" title="Clear saved progress (this Day only)">Reset Progress</button>
+      </div>
+      <div class="row">
+        <span>Rate this card:</span>
+        <button id="rateReview"  title="Needs review">❌ To Review</button>
+        <button id="rateLearned" title="I learned it">✅ Learned</button>
+      </div>
+    </div>
+
+    <img id="logo" src="logo.png" alt="Logo">
+
+    <script>
+      window.addEventListener('DOMContentLoaded', () => {
+        // ========= 0) CONFIG =========
+        const PUBLISH_URL   = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR52JCsudY5bODEbSEcoENW318QRI2FIhHAPzvEhobl-So16JkrypzF6eQL8dJn211qgNyD81_spxkC/pub';
+        const DOC_ID        = '1-NV8bFmglGyoA2ncBBBvhUkTnJrAH7u8I8o9AKzkSoM';
+        const DISCOVERY_URL = 'https://script.google.com/macros/s/AKfycbwhsRy8QwpudMYNc2QRnAcsqHIajuhaMUMxDjrPM0fSGj9MRLm7adS5XIg01eoKjRFxXw/exec';
+
+        // Allow-list
+        const COURSE_DAYS = 24;
+        const EXTRA_TABS = ["A-Z Word Bank", "Everyday Phrasal Verbs", "Business Phrasal Verbs", "Proverbs"];
+        const ALLOWED = new Set([
+          ...Array.from({ length: COURSE_DAYS }, (_, i) => `Day ${i + 1}`),
+          ...EXTRA_TABS,
+        ]);
+
+        // ========= 1) Grab UI =========
+        const dropdown  = document.getElementById("daySelector");
+        const flashcard = document.getElementById("flashcard");
+        const cardInner = document.getElementById("flashcardInner");
+        const front     = document.getElementById("cardFront");
+        const back      = document.getElementById("cardBack");
+        const prevBtn   = document.getElementById("prevBtn");
+        const nextBtn   = document.getElementById("nextBtn");
+
+        const shuffleBtn = document.getElementById('shuffleBtn');
+        const modeSelect = document.getElementById('modeSelect');
+        const resetBtn   = document.getElementById('resetProgressBtn');
+        const rateReviewBtn  = document.getElementById('rateReview');
+        const rateLearnedBtn = document.getElementById('rateLearned');
+
+        // Dictionary helper UI
+        const dictHelper = document.getElementById('dictHelper');
+        const dictChoice = document.getElementById('dictChoice');
+        const lookupBtn  = document.getElementById('lookupBtn');
+
+        let cards = []; let viewIndexes = []; let currentIndex = 0; let isFlipped = false; let shuffleOn = false;
+
+        // --- Duplicate detection (per current deck) ---
+        let duplicateCounts = null;
+        const normTerm = (s) => (s || '').trim().toLowerCase();
+        function buildTermCounts(pairs) {
+          const m = {};
+          for (const p of pairs) {
+            const k = normTerm(p[0]);
+            if (!k) continue;
+            m[k] = (m[k] || 0) + 1;
+          }
+          return m;
+        }
+        function isDuplicate(word) {
+          if (!duplicateCounts) return false;
+          return (duplicateCounts[normTerm(word)] || 0) > 1;
+        }
+
+        // ========= 2) Flip only on card tap =========
+        flashcard.addEventListener("click", (e) => {
+          if (!e.target.closest("button")) {
+            isFlipped = !isFlipped;
+            cardInner.classList.toggle("flipped", isFlipped);
+          }
+        });
+
+        // ========= 3) Progress storage + migration =========
+        const STORAGE_KEY = 'flashcards_progress_v2';
+        const deckKey = () => `deck_${dropdown.value || 'Default'}`;
+        const cardId = (pair) => `${pair[0] || ''}||${pair[1] || ''}`;
+        const loadAll = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; } };
+        const saveAll = (data) => localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        (function migrate(){
+          const all = loadAll(); let changed = false;
+          for (const dk in all) for (const id in all[dk]) {
+            const st = all[dk][id];
+            if (st && st.rating) {
+              if (st.rating === 'unknown' || st.rating === 'soso') { st.rating = 'review'; changed = true; }
+              else if (st.rating === 'known') { st.rating = 'learned'; changed = true; }
+            }
+          }
+          if (changed) saveAll(all);
+        })();
+        const getState = (pair) => {
+          const all = loadAll(); const dk = deckKey(); const id = cardId(pair);
+          return (all[dk] && all[dk][id]) || { rating:'review', last:0 };
+        };
+        const setState = (pair, patch) => {
+          const all = loadAll(); const dk = deckKey(); const id = cardId(pair);
+          all[dk] = all[dk] || {};
+          const prior = getState(pair);
+          all[dk][id] = { ...prior, ...patch, ts: Date.now() };
+          saveAll(all);
+        };
+        const resetDeck = () => { const all = loadAll(); delete all[deckKey()]; saveAll(all); };
+
+        // ========= 4) Filtering + Shuffle =========
+        function filteredIndexes(mode) {
+          if (!Array.isArray(cards)) return [];
+          return cards.reduce((acc, p, i) => {
+            const st = getState(p);
+            if (mode === 'all') acc.push(i);
+            else if (mode === 'review'  && st.rating === 'review')  acc.push(i);
+            else if (mode === 'learned' && st.rating === 'learned') acc.push(i);
+            return acc;
+          }, []);
+        }
+        function shuffleArray(arr) {
+          for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+          }
+          return arr;
+        }
+        function rebuildView(preserveCurrent = false) {
+          const mode = modeSelect.value;
+          const prevPair = cards[viewIndexes[currentIndex] ?? 0];
+          viewIndexes = filteredIndexes(mode);
+          if (viewIndexes.length === 0) viewIndexes = cards.map((_, i) => i);
+          if (shuffleOn) shuffleArray(viewIndexes);
+          if (preserveCurrent && prevPair) {
+            const target = cardId(prevPair);
+            const found = viewIndexes.findIndex(i => cardId(cards[i]) === target);
+            currentIndex = found >= 0 ? found : 0;
+          } else {
+            currentIndex = 0;
+          }
+          renderCurrent();
+        }
+        function renderCurrent() {
+          if (!viewIndexes.length || !cards.length) {
+            front.textContent = "No data available.";
+            back.textContent = "";
+            cardInner.classList.remove("flipped");
+            return;
+          }
+          const idx = viewIndexes[currentIndex] ?? 0;
+          const pair = cards[idx];
+
+          // Front: build with optional triangle
+          front.textContent = "";
+          const word = pair[0] || "";
+          const wordSpan = document.createElement('span');
+          wordSpan.textContent = word;
+          front.appendChild(wordSpan);
+
+          if (isDuplicate(word)) {
+            const flag = document.createElement('span');
+            flag.className = 'dup-flag';
+            flag.title = 'Duplicate word';
+            flag.setAttribute('aria-label', 'Duplicate word');
+            flag.textContent = '⚠️';
+            flag.style.marginLeft = '0.4rem';
+            front.appendChild(flag);
+          }
+
+          // Back
+          back.textContent = pair[1] || "";
+
+          // Keep flip state
+          cardInner.classList.toggle("flipped", isFlipped);
+
+          // 👉 expose current word for dictionary lookup
+          window.currentWord = word;
+        }
+
+        // ========= 5) Wire controls =========
+        nextBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (!viewIndexes.length) return;
+          currentIndex = (currentIndex + 1) % viewIndexes.length;
+          renderCurrent();
+        });
+        prevBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (!viewIndexes.length) return;
+          currentIndex = (currentIndex - 1 + viewIndexes.length) % viewIndexes.length;
+          renderCurrent();
+        });
+        shuffleBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          shuffleOn = !shuffleOn;
+          shuffleBtn.textContent = shuffleOn ? '🔁 Reshuffle' : '🔀 Shuffle';
+          rebuildView(true);
+        });
+        modeSelect.addEventListener('change', () => rebuildView(true));
+        resetBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (confirm('Clear saved progress for this Day?')) { resetDeck(); rebuildView(false); }
+        });
+        const rate = (rating) => {
+          const idx = viewIndexes[currentIndex] ?? 0;
+          const pair = cards[idx];
+          setState(pair, { rating, last: Date.now() });
+          currentIndex = (currentIndex + 1) % viewIndexes.length;
+          renderCurrent();
+        };
+        rateReviewBtn.addEventListener('click',  (e)=>{ e.stopPropagation(); rate('review');  });
+        rateLearnedBtn.addEventListener('click', (e)=>{ e.stopPropagation(); rate('learned'); });
+
+        // ========= 6) Loader (TSV first; CSV fallback) via Publish-to-web URL =========
+        function parseRows(text) {
+          const rows = text.trim().split(/\r?\n/);
+          if (rows.length <= 1) return [];
+          const useTab = rows[0].includes('\t');
+          const out = [];
+          for (let i = 1; i < rows.length; i++) {
+            const line = rows[i]; if (!line) continue;
+            if (useTab) {
+              const parts = line.split('\t');
+              const w = (parts[0] || '').trim();
+              const d = (parts[1] || '').trim();
+              if (w && d) out.push([w, d]);
+            } else {
+              const j = line.indexOf(',');
+              const w = j >= 0 ? line.slice(0, j).trim() : '';
+              const d = j >= 0 ? line.slice(j + 1).trim() : '';
+              if (w && d) out.push([w, d]);
+            }
+          }
+          return out;
+        }
+
+        function loadByGid(gid) {
+          if (!gid) {
+            console.error('[Load] Missing gid for selected tab.');
+            front.textContent = "Error loading data.";
+            back.textContent  = "";
+            return;
+          }
+          const urlTSV = `${PUBLISH_URL}?gid=${gid}&single=true&output=tsv`;
+          const urlCSV = `${PUBLISH_URL}?gid=${gid}&single=true&output=csv`;
+          console.log('[Load] Trying TSV:', urlTSV);
+          fetch(urlTSV)
+            .then(r => r.ok ? r.text() : Promise.reject(new Error('TSV not ok')))
+            .catch(() => {
+              console.warn('[Load] TSV failed, trying CSV:', urlCSV);
+              return fetch(urlCSV).then(r => {
+                if (!r.ok) throw new Error('CSV not ok');
+                return r.text();
+              });
+            })
+            .then(text => {
+              cards = parseRows(text);
+              duplicateCounts = buildTermCounts(cards);
+              console.log('[Dupes] cards:', cards.length, 'distinct:', Object.keys(duplicateCounts).length);
+
+              isFlipped = false;
+              cardInner.classList.remove("flipped");
+              rebuildView(false);
+            })
+            .catch(err => {
+              console.error('Load error:', err);
+              front.textContent = "Error loading data.";
+              back.textContent  = "";
+              cardInner.classList.remove("flipped");
+              viewIndexes = [];
+            });
+        }
+
+        // ========= 7) Discover worksheets (names → gid) with robust fallbacks =========
+        const sheetGIDs = {}; // manual fallback (empty = safe)
+
+        async function fetchGidMap() {
+          // 7a) Apps Script
+          try {
+            const url = `${DISCOVERY_URL}?id=${encodeURIComponent(DOC_ID)}`;
+            const res = await fetch(url, { cache: 'no-store' });
+            if (res.ok) {
+              const j = await res.json();
+              if (j && Object.keys(j).length) {
+                console.log('[Discover] Apps Script map:', j);
+                return j;
+              }
+            }
+          } catch (e) { console.warn('[Discover] Apps Script failed:', e); }
+
+          // 7b) Public worksheets feed
+          try {
+            const url = `https://spreadsheets.google.com/feeds/worksheets/${DOC_ID}/public/basic?alt=json`;
+            const res = await fetch(url);
+            if (res.ok) {
+              const data = await res.json();
+              const entries = (data.feed && data.feed.entry) || [];
+              const out = {};
+              for (const e of entries) {
+                const name = (e.title && e.title.$t) || '';
+                const link = (e.link || []).find(l => /gid=/.test(l.href));
+                const gid = link ? (new URL(link.href)).searchParams.get('gid') : null;
+                if (name && gid) out[name] = gid;
+              }
+              if (Object.keys(out).length) {
+                console.log('[Discover] Public feed map:', out);
+                return out;
+              }
+            }
+          } catch (e) { console.warn('[Discover] Public feed failed:', e); }
+
+          // 7c) Manual fallback
+          console.warn('[Discover] Using manual fallback map:', sheetGIDs);
+          return sheetGIDs;
+        }
+
+        function populateDropdown(map) {
+          dropdown.innerHTML = '';
+          const names = Object.keys(map)
+            .filter(name => ALLOWED.has(name))
+            .sort((a, b) => {
+              const ma = a.match(/^Day\s+(\d+)/i), mb = b.match(/^Day\s+(\d+)/i);
+              if (ma && mb) return +ma[1] - +mb[1];
+              if (ma) return -1; if (mb) return 1;
+              return a.localeCompare(b);
+            });
+          console.log('[Discover] Allowed names:', names);
+          for (const name of names) {
+            const opt = document.createElement('option');
+            opt.value = name; opt.textContent = name; opt.dataset.gid = map[name];
+            dropdown.appendChild(opt);
+          }
+        }
+
+        dropdown.addEventListener("change", () => {
+          const gid = dropdown.selectedOptions[0]?.dataset?.gid;
+          console.log('[UI] Change →', dropdown.value, 'gid:', gid);
+          if (gid) loadByGid(gid);
+        });
+
+        // ========= 8) Dictionary lookup (direct vs search with heuristics) =========
+        // URL templates
+        const DICT_DIRECT = {
+          cambridge: (w) => `https://dictionary.cambridge.org/dictionary/learner-english/${encodeURIComponent(w.replace(/\s+/g, '-').toLowerCase())}`,
+          oxford:    (w) => `https://www.oxfordlearnersdictionaries.com/definition/english/${encodeURIComponent(w.replace(/\s+/g, '-').toLowerCase())}`,
+          longman:   (w) => `https://www.ldoceonline.com/dictionary/${encodeURIComponent(w.replace(/\s+/g, '-').toLowerCase())}`,
+        };
+        const DICT_SEARCH = {
+          cambridge: (w) => `https://www.google.com/search?q=${encodeURIComponent('site:dictionary.cambridge.org "' + w + '"')}`,
+          oxford:    (w) => `https://www.google.com/search?q=${encodeURIComponent('site:oxfordlearnersdictionaries.com "' + w + '"')}`,
+          longman:   (w) => `https://www.google.com/search?q=${encodeURIComponent('site:ldoceonline.com "' + w + '"')}`,
+        };
+        const shouldUseSearch = (word) => {
+          if (!word) return true;
+          const w = word.trim();
+          if (/\s/.test(w)) return true;                 // phrases
+          if (/[^\p{L}\p{M}-]/u.test(w)) return true;    // punctuation
+          const lw = w.toLowerCase();
+          if (/(ing|ed|ies|ied|ers|est|s)$/.test(lw) && !/(ss|us|is|as)s$/.test(lw)) return true; // common inflections
+          return false;
+        };
+        const buildDictUrl = (key, word) => shouldUseSearch(word) ? DICT_SEARCH[key](word) : DICT_DIRECT[key](word);
+
+        // Stop clicks on helper from flipping the card
+        dictHelper.addEventListener('click', (e) => e.stopPropagation());
+        dictHelper.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+
+        // Click handler
+        lookupBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const dictKey = dictChoice.value; // cambridge | oxford | longman
+          let word = (window.currentWord || '').trim();
+          if (!word && Array.isArray(cards) && cards.length) {
+            const pair = cards[viewIndexes[currentIndex] ?? 0] || [];
+            word = (pair[0] || '').trim();
+          }
+          if (!word) {
+            alert('No word is selected yet.');
+            return;
+          }
+          const url = buildDictUrl(dictKey, word);
+          window.open(url, '_blank', 'noopener');
+        });
+
+        // ========= 9) Init =========
+        (async function init(){
+          try {
+            const discoveredMap = await fetchGidMap();
+            const allowedMap = Object.fromEntries(
+              Object.entries(discoveredMap).filter(([name]) => ALLOWED.has(name))
+            );
+
+            if (!Object.keys(allowedMap).length) {
+              front.classList.add('error');
+              front.textContent = "No allowed tabs found.\n\nCheck:\n• COURSE_DAYS & EXTRA_TABS\n• Sheet is published (File → Share → Publish to the web → Entire document)";
+              back.textContent = "";
+              console.warn('[Init] allowedMap empty. discoveredMap=', discoveredMap);
+              return;
+            }
+
+            populateDropdown(allowedMap);
+
+            const defaultName = allowedMap['A-Z Word Bank'] ? 'A-Z Word Bank'
+                              : allowedMap['Day 1'] ? 'Day 1'
+                              : Object.keys(allowedMap)[0];
+            dropdown.value = defaultName;
+
+            const gid = allowedMap[defaultName];
+            console.log('[Init] Default deck =', defaultName, 'gid:', gid);
+            if (gid) loadByGid(gid);
+            else {
+              front.textContent = "Error loading data.";
+              back.textContent  = "";
+              console.error('[Init] No gid for defaultName.');
+            }
+          } catch (err) {
+            console.error('[Init] Startup error:', err);
+            front.classList.add('error');
+            front.textContent = "Startup error. Open DevTools → Console for details.";
+            back.textContent = "";
+          }
+        })();
+      });
+    </script>
+  </div>
+</body>
+</html>
