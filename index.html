@@ -468,132 +468,78 @@
         rateReviewBtn.addEventListener('click',  (e)=>{ e.stopPropagation(); rate('review');  });
         rateLearnedBtn.addEventListener('click', (e)=>{ e.stopPropagation(); rate('learned'); });
 
-        // ========= 6) Loader (TSV first; CSV fallback) via Publish-to-web URL =========
-        function parseRows(text) {
-          const rows = text.trim().split(/\r?\n/);
-          if (rows.length <= 1) return [];
-          const useTab = rows[0].includes('\t');
-          const out = [];
-          for (let i = 1; i < rows.length; i++) {
-            const line = rows[i]; if (!line) continue;
-            if (useTab) {
-              const parts = line.split('\t');
-              const w = (parts[0] || '').trim();
-              const d = (parts[1] || '').trim();
-              if (w && d) out.push([w, d]);
-            } else {
-              const j = line.indexOf(',');
-              const w = j >= 0 ? line.slice(0, j).trim() : '';
-              const d = j >= 0 ? line.slice(j + 1).trim() : '';
-              if (w && d) out.push([w, d]);
-            }
-          }
-          return out;
-        }
-
-        function loadByGid(gid) {
-          if (!gid) {
-            console.error('[Load] Missing gid for selected tab.');
+        // ========= 6) Live Study loader via Bridge =========
+        async function loadBySheet(sheetName) {
+          if (!sheetName) {
+            console.error('[Study] Missing sheet name.');
             front.textContent = "Error loading data.";
-            back.textContent  = "";
+            back.textContent = "";
             return;
           }
-          const fresh = Date.now();
-          const urlTSV = `${PUBLISH_URL}?gid=${gid}&single=true&output=tsv&_=${fresh}`;
-          const urlCSV = `${PUBLISH_URL}?gid=${gid}&single=true&output=csv&_=${fresh}`;
-          console.log('[Load] Trying TSV:', urlTSV);
-          fetch(urlTSV, { cache: 'no-store' })
-            .then(r => r.ok ? r.text() : Promise.reject(new Error('TSV not ok')))
-            .catch(() => {
-              console.warn('[Load] TSV failed, trying CSV:', urlCSV);
-              return fetch(urlCSV, { cache: 'no-store' }).then(r => {
-                if (!r.ok) throw new Error('CSV not ok');
-                return r.text();
-              });
-            })
-            .then(text => {
-              cards = parseRows(text);
-              duplicateCounts = buildTermCounts(cards);
-              console.log('[Dupes] cards:', cards.length, 'distinct:', Object.keys(duplicateCounts).length);
 
-              isFlipped = false;
-              cardInner.classList.remove("flipped");
-              rebuildView(false);
-            })
-            .catch(err => {
-              console.error('Load error:', err);
-              front.textContent = "Error loading data.";
-              back.textContent  = "";
-              cardInner.classList.remove("flipped");
-              viewIndexes = [];
+          front.classList.remove('error');
+          front.textContent = "Loading…";
+          back.textContent = "";
+          cardInner.classList.remove("flipped");
+
+          try {
+            const data = await bridgeRequest({
+              action: 'study',
+              sheet: sheetName
             });
+
+            cards = Array.isArray(data.cards) ? data.cards : [];
+            duplicateCounts = buildTermCounts(cards);
+            console.log(
+              '[Study] Loaded',
+              sheetName,
+              'cards:',
+              cards.length,
+              'distinct:',
+              Object.keys(duplicateCounts).length
+            );
+
+            isFlipped = false;
+            cardInner.classList.remove("flipped");
+            rebuildView(false);
+          } catch (error) {
+            console.error('[Study] Load error:', error);
+            front.classList.add('error');
+            front.textContent = "Error loading data.\n\n" + error.message;
+            back.textContent = "";
+            viewIndexes = [];
+          }
         }
 
-        // ========= 7) Discover worksheets (names → gid) with robust fallbacks =========
-        const sheetGIDs = {}; // manual fallback (empty = safe)
-
-        async function fetchGidMap() {
-          // 7a) Apps Script
-          try {
-            const url = `${DISCOVERY_URL}?id=${encodeURIComponent(DOC_ID)}`;
-            const res = await fetch(url, { cache: 'no-store' });
-            if (res.ok) {
-              const j = await res.json();
-              if (j && Object.keys(j).length) {
-                console.log('[Discover] Apps Script map:', j);
-                return j;
-              }
-            }
-          } catch (e) { console.warn('[Discover] Apps Script failed:', e); }
-
-          // 7b) Public worksheets feed
-          try {
-            const url = `https://spreadsheets.google.com/feeds/worksheets/${DOC_ID}/public/basic?alt=json`;
-            const res = await fetch(url);
-            if (res.ok) {
-              const data = await res.json();
-              const entries = (data.feed && data.feed.entry) || [];
-              const out = {};
-              for (const e of entries) {
-                const name = (e.title && e.title.$t) || '';
-                const link = (e.link || []).find(l => /gid=/.test(l.href));
-                const gid = link ? (new URL(link.href)).searchParams.get('gid') : null;
-                if (name && gid) out[name] = gid;
-              }
-              if (Object.keys(out).length) {
-                console.log('[Discover] Public feed map:', out);
-                return out;
-              }
-            }
-          } catch (e) { console.warn('[Discover] Public feed failed:', e); }
-
-          // 7c) Manual fallback
-          console.warn('[Discover] Using manual fallback map:', sheetGIDs);
-          return sheetGIDs;
-        }
-
-        function populateDropdown(map) {
+        function populateDropdown(names) {
           dropdown.innerHTML = '';
-          const names = Object.keys(map)
+
+          const allowedNames = names
             .filter(isAllowedStudySheet)
             .sort((a, b) => {
-              const ma = a.match(/^Day\s+(\d+)/i), mb = b.match(/^Day\s+(\d+)/i);
+              const ma = a.match(/^Day\s+(\d+)/i);
+              const mb = b.match(/^Day\s+(\d+)/i);
+
               if (ma && mb) return +ma[1] - +mb[1];
-              if (ma) return -1; if (mb) return 1;
+              if (ma) return -1;
+              if (mb) return 1;
               return a.localeCompare(b);
             });
-          console.log('[Discover] Allowed names:', names);
-          for (const name of names) {
-            const opt = document.createElement('option');
-            opt.value = name; opt.textContent = name; opt.dataset.gid = map[name];
-            dropdown.appendChild(opt);
+
+          console.log('[Study] Available sheets:', allowedNames);
+
+          for (const name of allowedNames) {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = name;
+            dropdown.appendChild(option);
           }
         }
 
         dropdown.addEventListener("change", () => {
-          const gid = dropdown.selectedOptions[0]?.dataset?.gid;
-          console.log('[UI] Change →', dropdown.value, 'gid:', gid);
-          if (gid) loadByGid(gid);
+          if (dropdown.value) {
+            loadBySheet(dropdown.value);
+          }
         });
 
         // ========= 8) Dictionary lookup (direct vs search with heuristics) =========
@@ -722,12 +668,9 @@
             initializeManageView();
           }
 
-          if (showStudy && studyNeedsRefresh) {
-            const gid = dropdown.selectedOptions[0]?.dataset?.gid;
-            if (gid) {
-              studyNeedsRefresh = false;
-              loadByGid(gid);
-            }
+          if (showStudy && studyNeedsRefresh && dropdown.value) {
+            studyNeedsRefresh = false;
+            loadBySheet(dropdown.value);
           }
         }
 
@@ -909,38 +852,39 @@
         (async function init(){
           try {
             await loadBridgeStatus();
-            const discoveredMap = await fetchGidMap();
-            const allowedMap = Object.fromEntries(
-              Object.entries(discoveredMap).filter(([name]) => isAllowedStudySheet(name))
-            );
 
-            if (!Object.keys(allowedMap).length) {
+            const data = await bridgeRequest({ action: 'days' });
+            const studySheets = Array.isArray(data.studySheets)
+              ? data.studySheets
+              : data.days || [];
+
+            if (!studySheets.length) {
               front.classList.add('error');
-              front.textContent = "No allowed tabs found.\n\nCheck:\n• Administrative Day limit\n• Sheet is published (File → Share → Publish to the web → Entire document)";
+              front.textContent =
+                "No accessible Study sheets were found.\n\n" +
+                "Check the administrative Day limit and Bridge deployment.";
               back.textContent = "";
-              console.warn('[Init] allowedMap empty. discoveredMap=', discoveredMap);
               return;
             }
 
-            populateDropdown(allowedMap);
+            populateDropdown(studySheets);
 
-            const defaultName = allowedMap['Day 1'] ? 'Day 1'
-                              : allowedMap['A-Z Word Bank'] ? 'A-Z Word Bank'
-                              : Object.keys(allowedMap)[0];
+            const availableNames = Array.from(dropdown.options)
+              .map((option) => option.value);
+
+            const defaultName = availableNames.includes('Day 1')
+              ? 'Day 1'
+              : availableNames.includes('A-Z Word Bank')
+                ? 'A-Z Word Bank'
+                : availableNames[0];
+
             dropdown.value = defaultName;
-
-            const gid = allowedMap[defaultName];
-            console.log('[Init] Default deck =', defaultName, 'gid:', gid);
-            if (gid) loadByGid(gid);
-            else {
-              front.textContent = "Error loading data.";
-              back.textContent  = "";
-              console.error('[Init] No gid for defaultName.');
-            }
+            await loadBySheet(defaultName);
           } catch (err) {
             console.error('[Init] Startup error:', err);
             front.classList.add('error');
-            front.textContent = "Startup error. Open DevTools → Console for details.";
+            front.textContent =
+              "Startup error.\n\n" + err.message;
             back.textContent = "";
           }
         })();
