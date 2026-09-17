@@ -67,6 +67,63 @@
       font-size:16px;
       cursor:pointer;
     }
+    .view-tabs { display:flex; gap:8px; margin: 0 0 20px; }
+    .view-tab {
+      flex:1; padding:11px 14px; border:1px solid #24613b; border-radius:12px;
+      background:#fff; color:#24613b; font-weight:700; cursor:pointer;
+    }
+    .view-tab.active { background:#24613b; color:#fff; }
+    .view-panel[hidden] { display:none; }
+    .manage-card {
+      margin:16px 0; padding:18px; border:1px solid #d8e2da; border-radius:16px;
+      background:#fbfdfb; box-shadow:0 6px 18px rgba(0,0,0,.04);
+    }
+    .manage-card h2, .manage-card h3 { margin-top:0; }
+    .manage-field { margin:0 0 14px; }
+    .manage-field label { display:block; margin:0 0 6px; }
+    .manage-field select,
+    .manage-field input,
+    .manage-field textarea {
+      width:100%; padding:11px 12px; border:1px solid #bbb; border-radius:10px;
+      font:inherit; background:#fff;
+    }
+    .manage-field textarea { min-height:100px; resize:vertical; }
+    .manage-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .manage-actions button,
+    .entry-actions button {
+      padding:10px 14px; border:1px solid #aaa; border-radius:10px;
+      background:#fff; cursor:pointer;
+    }
+    .manage-actions .primary { background:#24613b; border-color:#24613b; color:#fff; }
+    .manage-status { min-height:1.5em; margin:12px 0; }
+    .manage-status.success { color:#176b32; }
+    .manage-status.error { color:#b00020; }
+    .entry-list { display:grid; gap:10px; }
+    .entry-item {
+      padding:13px; border:1px solid #ddd; border-radius:12px; background:#fff;
+    }
+    .entry-word { font-weight:700; margin-bottom:5px; overflow-wrap:anywhere; }
+    .entry-definition { margin-bottom:10px; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .entry-actions { display:flex; gap:8px; }
+    .entry-actions button {
+      padding:7px 11px; border:1px solid #aaa; border-radius:9px;
+      background:#fff; cursor:pointer;
+    }
+    .entry-actions .delete-entry { color:#b00020; border-color:#d8a8b0; }
+    .manage-note { color:#444; font-size:14px; }
+    .setup-warning {
+      padding:12px; border:1px solid #e3b341; border-radius:10px; background:#fff8df;
+    }
+    .setup-warning p { margin-top:0; }
+    .setup-connect { display:flex; gap:8px; flex-wrap:wrap; }
+    .setup-connect input {
+      flex:1 1 220px; min-width:0; padding:10px 12px; border:1px solid #aaa;
+      border-radius:9px; font:inherit; background:#fff;
+    }
+    .setup-connect button {
+      padding:10px 14px; border:1px solid #24613b; border-radius:9px;
+      background:#24613b; color:#fff; font-weight:700; cursor:pointer;
+    }
     .sr-only {
       position:absolute;
       left:-9999px;
@@ -85,6 +142,13 @@
 <body>
   <div class="page">
     <h1>Vocabulary Flashcards</h1>
+
+    <div class="view-tabs" role="tablist" aria-label="App sections">
+      <button class="view-tab active" id="studyTab" type="button" role="tab" aria-selected="true">Study</button>
+      <button class="view-tab" id="manageTab" type="button" role="tab" aria-selected="false">Add &amp; Manage</button>
+    </div>
+
+    <section class="view-panel" id="studyView">
 
     <div>
       <label for="daySelector">Select Day:</label>
@@ -132,22 +196,72 @@
       </div>
     </div>
 
+    </section>
+
+    <section class="view-panel" id="manageView" hidden>
+      <div class="manage-card">
+        <h2>Add &amp; Manage Vocabulary</h2>
+        <p class="manage-note">Vocabulary is saved to the selected Day. The A-Z Word Bank is updated automatically.</p>
+
+        <div id="bridgeSetupWarning" class="setup-warning" hidden>
+          <p id="bridgeSetupMessage">This device has not been connected yet.</p>
+          <div class="setup-connect">
+            <label class="sr-only" for="bridgeTokenInput">Connection code</label>
+            <input id="bridgeTokenInput" type="password" placeholder="Connection code" autocomplete="off">
+            <button id="connectBridgeBtn" type="button">Connect This Device</button>
+          </div>
+        </div>
+
+        <div id="manageControls">
+          <div class="manage-field">
+            <label for="manageDaySelector">Select Day:</label>
+            <select id="manageDaySelector"></select>
+          </div>
+
+          <form id="entryForm">
+            <div class="manage-field">
+              <label for="manageWord">Word or phrase:</label>
+              <input id="manageWord" type="text" maxlength="250" autocomplete="off" required>
+            </div>
+
+            <div class="manage-field">
+              <label for="manageDefinition">Definition:</label>
+              <textarea id="manageDefinition" maxlength="2000" required></textarea>
+            </div>
+
+            <div class="manage-actions">
+              <button class="primary" id="saveEntryBtn" type="submit">Add Vocabulary</button>
+              <button id="cancelEditBtn" type="button" hidden>Cancel Edit</button>
+            </div>
+          </form>
+
+          <div class="manage-status" id="manageStatus" role="status" aria-live="polite"></div>
+
+          <h3 id="entryListHeading">Vocabulary for selected Day</h3>
+          <div class="entry-list" id="entryList"></div>
+        </div>
+      </div>
+    </section>
+
     <img id="logo" src="logo.png" alt="Logo">
 
     <script>
       window.addEventListener('DOMContentLoaded', () => {
-        // ========= 0) CONFIG =========
+        // ========= 0) STUDENT-SPECIFIC CONFIG =========
+        // Replace only the three PASTE_... values when creating a student's App.
         const PUBLISH_URL   = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTBb8XnHCGbDtnyvnku4k0QrMwJVL2kPwiFoaxI2sUbIAp9Mn9GYWzkexs7xjq1pHRmI8n7fZZwwKq7/pub';
         const DOC_ID        = '1q1k6IEiBQ1AMWYCzW7sxelAFBoAyGuT_h83ZQi8jKRs';
         const DISCOVERY_URL = 'https://script.google.com/macros/s/AKfycbwhsRy8QwpudMYNc2QRnAcsqHIajuhaMUMxDjrPM0fSGj9MRLm7adS5XIg01eoKjRFxXw/exec';
+        const BRIDGE_URL    = 'https://script.google.com/macros/s/AKfycbyRW2zCk_P38kWXCA41k7SWk7trBxiwxqY3K5nrS2jltqvTYYrrA_uZzC0z020h5nsv/exec';
 
         // Allow-list
-        const COURSE_DAYS = 20;
+        let courseDays = 0; // Safe fallback; the bridge supplies the administrative limit.
         const EXTRA_TABS = ["A-Z Word Bank", "Everyday Phrasal Verbs", "Business Phrasal Verbs", "Proverbs"];
-        const ALLOWED = new Set([
-          ...Array.from({ length: COURSE_DAYS }, (_, i) => `Day ${i + 1}`),
-          ...EXTRA_TABS,
-        ]);
+        const isAllowedStudySheet = (name) => {
+          const match = name.match(/^Day\s+(\d+)$/i);
+          if (match) return Number(match[1]) <= courseDays;
+          return EXTRA_TABS.includes(name);
+        };
 
         // ========= 1) Grab UI =========
         const dropdown  = document.getElementById("daySelector");
@@ -169,7 +283,31 @@
         const dictChoice = document.getElementById('dictChoice');
         const lookupBtn  = document.getElementById('lookupBtn');
 
+        // Study / Add & Manage UI
+        const studyTab = document.getElementById('studyTab');
+        const manageTab = document.getElementById('manageTab');
+        const studyView = document.getElementById('studyView');
+        const manageView = document.getElementById('manageView');
+        const bridgeSetupWarning = document.getElementById('bridgeSetupWarning');
+        const bridgeSetupMessage = document.getElementById('bridgeSetupMessage');
+        const bridgeTokenInput = document.getElementById('bridgeTokenInput');
+        const connectBridgeBtn = document.getElementById('connectBridgeBtn');
+        const manageControls = document.getElementById('manageControls');
+        const manageDaySelector = document.getElementById('manageDaySelector');
+        const entryForm = document.getElementById('entryForm');
+        const manageWord = document.getElementById('manageWord');
+        const manageDefinition = document.getElementById('manageDefinition');
+        const saveEntryBtn = document.getElementById('saveEntryBtn');
+        const cancelEditBtn = document.getElementById('cancelEditBtn');
+        const manageStatus = document.getElementById('manageStatus');
+        const entryListHeading = document.getElementById('entryListHeading');
+        const entryList = document.getElementById('entryList');
+
         let cards = []; let viewIndexes = []; let currentIndex = 0; let isFlipped = false; let shuffleOn = false;
+        let bridgeToken = '';
+        let manageReady = false;
+        let editingRow = null;
+        let studyNeedsRefresh = false;
 
         // --- Duplicate detection (per current deck) ---
         let duplicateCounts = null;
@@ -360,14 +498,15 @@
             back.textContent  = "";
             return;
           }
-          const urlTSV = `${PUBLISH_URL}?gid=${gid}&single=true&output=tsv`;
-          const urlCSV = `${PUBLISH_URL}?gid=${gid}&single=true&output=csv`;
+          const fresh = Date.now();
+          const urlTSV = `${PUBLISH_URL}?gid=${gid}&single=true&output=tsv&_=${fresh}`;
+          const urlCSV = `${PUBLISH_URL}?gid=${gid}&single=true&output=csv&_=${fresh}`;
           console.log('[Load] Trying TSV:', urlTSV);
-          fetch(urlTSV)
+          fetch(urlTSV, { cache: 'no-store' })
             .then(r => r.ok ? r.text() : Promise.reject(new Error('TSV not ok')))
             .catch(() => {
               console.warn('[Load] TSV failed, trying CSV:', urlCSV);
-              return fetch(urlCSV).then(r => {
+              return fetch(urlCSV, { cache: 'no-store' }).then(r => {
                 if (!r.ok) throw new Error('CSV not ok');
                 return r.text();
               });
@@ -436,7 +575,7 @@
         function populateDropdown(map) {
           dropdown.innerHTML = '';
           const names = Object.keys(map)
-            .filter(name => ALLOWED.has(name))
+            .filter(isAllowedStudySheet)
             .sort((a, b) => {
               const ma = a.match(/^Day\s+(\d+)/i), mb = b.match(/^Day\s+(\d+)/i);
               if (ma && mb) return +ma[1] - +mb[1];
@@ -501,17 +640,283 @@
           window.open(url, '_blank', 'noopener');
         });
 
-        // ========= 9) Init =========
+        // ========= 9) Add & Manage bridge =========
+        const BRIDGE_TOKEN_KEY = 'azwb_bridge_token_v1';
+
+        function captureBridgeToken() {
+          const params = new URLSearchParams(location.hash.replace(/^#/, ''));
+          const incoming = (params.get('token') || '').trim();
+
+          if (incoming) {
+            localStorage.setItem(BRIDGE_TOKEN_KEY, incoming);
+            history.replaceState(null, document.title, location.pathname + location.search);
+          }
+
+          return (localStorage.getItem(BRIDGE_TOKEN_KEY) || '').trim();
+        }
+
+        async function loadBridgeStatus() {
+          try {
+            const response = await fetch(BRIDGE_URL, { cache: 'no-store' });
+            const data = await response.json();
+
+            const maxAccessibleDay = Number(data.maxAccessibleDay);
+
+            if (
+              data.ok &&
+              Number.isInteger(maxAccessibleDay) &&
+              maxAccessibleDay >= 1 &&
+              maxAccessibleDay <= 100
+            ) {
+              courseDays = maxAccessibleDay;
+            }
+          } catch (error) {
+            console.warn('[Bridge] Status unavailable; Day access remains locked.', error);
+          }
+        }
+
+        async function bridgeRequest(payload) {
+          const response = await fetch(BRIDGE_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(payload)
+          });
+
+          const data = await response.json();
+
+          if (!data.ok) {
+            throw new Error(data.error || 'The request could not be completed.');
+          }
+
+          return data;
+        }
+
+        function showBridgeSetup(message) {
+          bridgeSetupMessage.textContent = message || 'This device has not been connected yet.';
+          bridgeSetupWarning.hidden = false;
+          manageControls.hidden = true;
+        }
+
+        function setManageStatus(message, type = '') {
+          manageStatus.textContent = message;
+          manageStatus.className = `manage-status ${type}`.trim();
+        }
+
+        function resetEntryForm() {
+          editingRow = null;
+          entryForm.reset();
+          saveEntryBtn.textContent = 'Add Vocabulary';
+          cancelEditBtn.hidden = true;
+        }
+
+        function setActiveView(view) {
+          const showStudy = view === 'study';
+          studyView.hidden = !showStudy;
+          manageView.hidden = showStudy;
+          studyTab.classList.toggle('active', showStudy);
+          manageTab.classList.toggle('active', !showStudy);
+          studyTab.setAttribute('aria-selected', String(showStudy));
+          manageTab.setAttribute('aria-selected', String(!showStudy));
+
+          if (!showStudy && !manageReady) {
+            initializeManageView();
+          }
+
+          if (showStudy && studyNeedsRefresh) {
+            const gid = dropdown.selectedOptions[0]?.dataset?.gid;
+            if (gid) {
+              studyNeedsRefresh = false;
+              loadByGid(gid);
+            }
+          }
+        }
+
+        async function initializeManageView() {
+          bridgeSetupWarning.hidden = true;
+          manageControls.hidden = false;
+          setManageStatus('Loading available Days…');
+
+          try {
+            const data = await bridgeRequest({ action: 'days' });
+            manageDaySelector.innerHTML = '';
+
+            data.days.forEach((name) => {
+              const option = document.createElement('option');
+              option.value = name;
+              option.textContent = name;
+              manageDaySelector.appendChild(option);
+            });
+
+            if (!data.days.length) {
+              throw new Error('No released Day sheets were found.');
+            }
+
+            manageReady = true;
+            setManageStatus('');
+            await loadManageEntries();
+          } catch (error) {
+            setManageStatus(error.message, 'error');
+          }
+        }
+
+        connectBridgeBtn.addEventListener('click', async () => {
+          const token = bridgeTokenInput.value.trim();
+
+          if (!token) {
+            bridgeSetupMessage.textContent = 'Please enter the connection code.';
+            return;
+          }
+
+          bridgeToken = token;
+          localStorage.setItem(BRIDGE_TOKEN_KEY, token);
+          bridgeTokenInput.value = '';
+          manageReady = false;
+          await initializeManageView();
+        });
+
+        async function loadManageEntries() {
+          const sheet = manageDaySelector.value;
+          if (!sheet) return;
+
+          entryListHeading.textContent = `Vocabulary for ${sheet}`;
+          entryList.textContent = 'Loading…';
+
+          try {
+            const data = await bridgeRequest({ action: 'list', sheet });
+            renderManageEntries(data.entries || []);
+          } catch (error) {
+            entryList.textContent = '';
+            setManageStatus(error.message, 'error');
+          }
+        }
+
+        function renderManageEntries(entries) {
+          entryList.innerHTML = '';
+
+          if (!entries.length) {
+            const empty = document.createElement('p');
+            empty.textContent = 'No vocabulary has been added to this Day yet.';
+            entryList.appendChild(empty);
+            return;
+          }
+
+          entries.forEach((entry) => {
+            const item = document.createElement('div');
+            item.className = 'entry-item';
+
+            const word = document.createElement('div');
+            word.className = 'entry-word';
+            word.textContent = entry.word;
+
+            const definition = document.createElement('div');
+            definition.className = 'entry-definition';
+            definition.textContent = entry.definition;
+
+            const actions = document.createElement('div');
+            actions.className = 'entry-actions';
+
+            const editButton = document.createElement('button');
+            editButton.type = 'button';
+            editButton.textContent = 'Edit';
+            editButton.addEventListener('click', () => {
+              editingRow = entry.row;
+              manageWord.value = entry.word;
+              manageDefinition.value = entry.definition;
+              saveEntryBtn.textContent = 'Save Changes';
+              cancelEditBtn.hidden = false;
+              manageWord.focus();
+              setManageStatus(`Editing “${entry.word}”`);
+            });
+
+            const deleteButton = document.createElement('button');
+            deleteButton.type = 'button';
+            deleteButton.className = 'delete-entry';
+            deleteButton.textContent = 'Delete';
+            deleteButton.addEventListener('click', async () => {
+              if (!confirm(`Delete “${entry.word}” from ${manageDaySelector.value}?`)) return;
+
+              setManageStatus('Deleting…');
+              try {
+                await bridgeRequest({
+                  action: 'delete',
+                  sheet: manageDaySelector.value,
+                  row: entry.row
+                });
+                studyNeedsRefresh = true;
+                resetEntryForm();
+                setManageStatus('Vocabulary deleted.', 'success');
+                await loadManageEntries();
+              } catch (error) {
+                setManageStatus(error.message, 'error');
+              }
+            });
+
+            actions.append(editButton, deleteButton);
+            item.append(word, definition, actions);
+            entryList.appendChild(item);
+          });
+        }
+
+        studyTab.addEventListener('click', () => setActiveView('study'));
+        manageTab.addEventListener('click', () => setActiveView('manage'));
+
+        manageDaySelector.addEventListener('change', async () => {
+          resetEntryForm();
+          setManageStatus('');
+          await loadManageEntries();
+        });
+
+        cancelEditBtn.addEventListener('click', () => {
+          resetEntryForm();
+          setManageStatus('Edit cancelled.');
+        });
+
+        entryForm.addEventListener('submit', async (event) => {
+          event.preventDefault();
+
+          const word = manageWord.value.trim();
+          const definition = manageDefinition.value.trim();
+          const action = editingRow === null ? 'add' : 'update';
+          const payload = {
+            action,
+            sheet: manageDaySelector.value,
+            word,
+            definition
+          };
+
+          if (editingRow !== null) payload.row = editingRow;
+
+          saveEntryBtn.disabled = true;
+          setManageStatus(action === 'add' ? 'Adding…' : 'Saving changes…');
+
+          try {
+            await bridgeRequest(payload);
+            studyNeedsRefresh = true;
+            resetEntryForm();
+            setManageStatus(
+              action === 'add' ? 'Vocabulary added.' : 'Changes saved.',
+              'success'
+            );
+            await loadManageEntries();
+          } catch (error) {
+            setManageStatus(error.message, 'error');
+          } finally {
+            saveEntryBtn.disabled = false;
+          }
+        });
+
+        // ========= 10) Init =========
         (async function init(){
           try {
+            await loadBridgeStatus();
             const discoveredMap = await fetchGidMap();
             const allowedMap = Object.fromEntries(
-              Object.entries(discoveredMap).filter(([name]) => ALLOWED.has(name))
+              Object.entries(discoveredMap).filter(([name]) => isAllowedStudySheet(name))
             );
 
             if (!Object.keys(allowedMap).length) {
               front.classList.add('error');
-              front.textContent = "No allowed tabs found.\n\nCheck:\n• COURSE_DAYS & EXTRA_TABS\n• Sheet is published (File → Share → Publish to the web → Entire document)";
+              front.textContent = "No allowed tabs found.\n\nCheck:\n• Administrative Day limit\n• Sheet is published (File → Share → Publish to the web → Entire document)";
               back.textContent = "";
               console.warn('[Init] allowedMap empty. discoveredMap=', discoveredMap);
               return;
@@ -519,8 +924,8 @@
 
             populateDropdown(allowedMap);
 
-            const defaultName = allowedMap['A-Z Word Bank'] ? 'A-Z Word Bank'
-                              : allowedMap['Day 1'] ? 'Day 1'
+            const defaultName = allowedMap['Day 1'] ? 'Day 1'
+                              : allowedMap['A-Z Word Bank'] ? 'A-Z Word Bank'
                               : Object.keys(allowedMap)[0];
             dropdown.value = defaultName;
 
