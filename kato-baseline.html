@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  />
+  <title>Vocabulary Flashcards</title>
+
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    *,*::before,*::after { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      margin: 0;
+      color: #111;
+      -webkit-text-size-adjust: 100%;
+    }
+    .page {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 24px;
+      padding-left: calc(24px + env(safe-area-inset-left));
+      padding-right: calc(24px + env(safe-area-inset-right));
+    }
+
+    h1 { margin-bottom: 12px; }
+    label { font-weight: 600; margin-right: 8px; }
+    select, button { font-size: 16px; }
+    .flashcard { width: 100%; max-width: 600px; height: 280px; margin: 16px auto; perspective: 1200px; }
+
+    .flashcard-inner { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform .35s ease; border-radius: 16px; }
+    .flashcard-inner.flipped { transform: rotateY(180deg); }
+    .flashcard-front, .flashcard-back {
+      position: absolute; inset: 0; display:flex; align-items:center; justify-content:center;
+      backface-visibility: hidden; -webkit-backface-visibility: hidden;
+      border: 1px solid #ddd; border-radius: 16px; padding: 18px; text-align:center;
+      font-size: clamp(18px, 3.2vw, 28px); background: #fff;
+      box-shadow: 0 8px 22px rgba(0,0,0,.06);
+    }
+    .flashcard-back { transform: rotateY(180deg); background:#fbfbff; }
+    .buttons { display:flex; gap:10px; justify-content:center; margin: 10px 0 18px; }
+    .buttons button { padding:10px 14px; border-radius:12px; border:1px solid #ccc; cursor:pointer; }
+    .study-controls { display:flex; flex-direction:column; gap:8px; align-items:center; margin-top:10px; }
+    .study-controls .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:center; }
+    .study-controls button, .study-controls select { padding:10px 14px; border-radius:12px; border:1px solid #ccc; font-size:16px; cursor:pointer; }
+    #logo { display:block; margin: 20px auto; width:80px; height:auto; opacity:.7; }
+    .error { white-space: pre-line; color:#b00020; text-align:center; }
+
+    /* Duplicate indicator */
+    .dup-flag { display:inline-block; line-height:1; vertical-align:baseline; opacity:.9; margin-left:.4rem; }
+
+    /* Dictionary helper (above card) */
+    .helper {
+      display:flex;
+      gap:8px;
+      justify-content:center;
+      align-items:center;
+      margin: 12px 0 10px;
+    }
+    .helper select,
+    .helper button {
+      padding:10px 14px;
+      border-radius:12px;
+      border:1px solid #ccc;
+      font-size:16px;
+      cursor:pointer;
+    }
+    .view-tabs { display:flex; gap:8px; margin: 0 0 20px; }
+    .view-tab {
+      flex:1; padding:11px 14px; border:1px solid #24613b; border-radius:12px;
+      background:#fff; color:#24613b; font-weight:700; cursor:pointer;
+    }
+    .view-tab.active { background:#24613b; color:#fff; }
+    .view-panel[hidden] { display:none; }
+    .manage-card {
+      margin:16px 0; padding:18px; border:1px solid #d8e2da; border-radius:16px;
+      background:#fbfdfb; box-shadow:0 6px 18px rgba(0,0,0,.04);
+    }
+    .manage-card h2, .manage-card h3 { margin-top:0; }
+    .manage-field { margin:0 0 14px; }
+    .manage-field label { display:block; margin:0 0 6px; }
+    .manage-field select,
+    .manage-field input,
+    .manage-field textarea {
+      width:100%; padding:11px 12px; border:1px solid #bbb; border-radius:10px;
+      font:inherit; background:#fff;
+    }
+    .manage-field textarea { min-height:100px; resize:vertical; }
+    .manage-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .manage-actions button,
+    .entry-actions button {
+      padding:10px 14px; border:1px solid #aaa; border-radius:10px;
+      background:#fff; cursor:pointer;
+    }
+    .manage-actions .primary { background:#24613b; border-color:#24613b; color:#fff; }
+    .manage-status { min-height:1.5em; margin:12px 0; }
+    .manage-status.success { color:#176b32; }
+    .manage-status.error { color:#b00020; }
+    .entry-list { display:grid; gap:10px; }
+    .entry-item {
+      padding:13px; border:1px solid #ddd; border-radius:12px; background:#fff;
+    }
+    .entry-word { font-weight:700; margin-bottom:5px; overflow-wrap:anywhere; }
+    .entry-definition { margin-bottom:10px; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .entry-actions { display:flex; gap:8px; }
+    .entry-actions button {
+      padding:7px 11px; border:1px solid #aaa; border-radius:9px;
+      background:#fff; cursor:pointer;
+    }
+    .entry-actions .delete-entry { color:#b00020; border-color:#d8a8b0; }
+    .manage-note { color:#444; font-size:14px; }
+    .setup-warning {
+      padding:12px; border:1px solid #e3b341; border-radius:10px; background:#fff8df;
+    }
+    .setup-warning p { margin-top:0; }
+    .setup-connect { display:flex; gap:8px; flex-wrap:wrap; }
+    .setup-connect input {
+      flex:1 1 220px; min-width:0; padding:10px 12px; border:1px solid #aaa;
+      border-radius:9px; font:inherit; background:#fff;
+    }
+    .setup-connect button {
+      padding:10px 14px; border:1px solid #24613b; border-radius:9px;
+      background:#24613b; color:#fff; font-weight:700; cursor:pointer;
+    }
+    .sr-only {
+      position:absolute;
+      left:-9999px;
+      width:1px;
+      height:1px;
+      overflow:hidden;
+    }
+  </style>
+
+  <link rel="icon" href="logo.png" type="image/png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0b57d0">
+</head>
+
+<body>
+  <div class="page">
+    <h1>Vocabulary Flashcards</h1>
+
+    <div class="view-tabs" role="tablist" aria-label="App sections">
+      <button class="view-tab active" id="studyTab" type="button" role="tab" aria-selected="true">Study</button>
+      <button class="view-tab" id="manageTab" type="button" role="tab" aria-selected="false">Add &amp; Manage</button>
+    </div>
+
+    <section class="view-panel" id="studyView">
+
+    <div>
+      <label for="daySelector">Select Day:</label>
+      <select id="daySelector"></select>
+    </div>
+
+    <!-- NEW: dictionary helper (ABOVE the flashcard) -->
+    <div class="helper" id="dictHelper">
+      <label for="dictChoice" class="sr-only">Choose dictionary</label>
+      <select id="dictChoice" aria-label="Choose dictionary">
+        <option value="cambridge">Cambridge Learner's Dictionary</option>
+        <option value="oxford">Oxford Learner's Dictionary</option>
+        <option value="longman">Longman Dictionary</option>
+      </select>
+      <button id="lookupBtn" aria-label="Look up this word">🔎 Look up</button>
+    </div>
+
+    <div class="flashcard" id="flashcard">
+      <div class="flashcard-inner" id="flashcardInner">
+        <div class="flashcard-front" id="cardFront">Loading…</div>
+        <div class="flashcard-back" id="cardBack"></div>
+      </div>
+    </div>
+
+    <div class="buttons">
+      <button id="prevBtn">Back</button>
+      <button id="nextBtn">Next</button>
+    </div>
+
+    <div class="study-controls">
+      <div class="row">
+        <button id="shuffleBtn" title="Shuffle order">🔀 Shuffle</button>
+        <label for="modeSelect">Study set:</label>
+        <select id="modeSelect">
+          <option value="all">All</option>
+          <option value="review">To Review</option>
+          <option value="learned">Learned</option>
+        </select>
+        <button id="resetProgressBtn" title="Clear saved progress (this Day only)">Reset Progress</button>
+      </div>
+      <div class="row">
+        <span>Rate this card:</span>
+        <button id="rateReview"  title="Needs review">❌ To Review</button>
+        <button id="rateLearned" title="I learned it">✅ Learned</button>
+      </div>
+    </div>
+
+    </section>
+
+    <section class="view-panel" id="manageView" hidden>
+      <div class="manage-card">
+        <h2>Add &amp; Manage Vocabulary</h2>
+        <p class="manage-note">Vocabulary is saved to the selected Day. The A-Z Word Bank is updated automatically.</p>
+
+        <div id="bridgeSetupWarning" class="setup-warning" hidden>
+          <p id="bridgeSetupMessage">This device has not been connected yet.</p>
+          <div class="setup-connect">
+            <label class="sr-only" for="bridgeTokenInput">Connection code</label>
+            <input id="bridgeTokenInput" type="password" placeholder="Connection code" autocomplete="off">
+            <button id="connectBridgeBtn" type="button">Connect This Device</button>
+          </div>
+        </div>
+
+        <div id="manageControls">
+          <div class="manage-field">
+            <label for="manageDaySelector">Select Day:</label>
+            <select id="manageDaySelector"></select>
+          </div>
+
+          <form id="entryForm">
+            <div class="manage-field">
+              <label for="manageWord">Word or phrase:</label>
+              <input id="manageWord" type="text" maxlength="250" autocomplete="off" required>
+            </div>
+
+            <div class="manage-field">
+              <label for="manageDefinition">Definition:</label>
+              <textarea id="manageDefinition" maxlength="2000" required></textarea>
+            </div>
+
+            <div class="manage-actions">
+              <button class="primary" id="saveEntryBtn" type="submit">Add Vocabulary</button>
+              <button id="cancelEditBtn" type="button" hidden>Cancel Edit</button>
+            </div>
+          </form>
+
+          <div class="manage-status" id="manageStatus" role="status" aria-live="polite"></div>
+
+          <h3 id="entryListHeading">Vocabulary for selected Day</h3>
+          <div class="entry-list" id="entryList"></div>
+        </div>
+      </div>
+    </section>
+
+    <img id="logo" src="logo.png" alt="Logo">
+
+    <script>
+      window.addEventListener('DOMContentLoaded', () => {
+        // ========= 0) STUDENT-SPECIFIC CONFIG =========
+        // Replace this one value when creating a student's App.
+        const BRIDGE_URL = 'https://script.google.com/macros/s/AKfycbyRW2zCk_P38kWXCA41k7SWk7trBxiwxqY3K5nrS2jltqvTYYrrA_uZzC0z020h5nsv/exec';
+
+        // Allow-list
+        let courseDays = 0; // Safe fallback; the bridge supplies the administrative limit.
+        const EXTRA_TABS = ["A-Z Word Bank", "Everyday Phrasal Verbs", "Business Phrasal Verbs", "Proverbs"];
+        const isAllowedStudySheet = (name) => {
+          const match = name.match(/^Day\s+(\d+)$/i);
+          if (match) return Number(match[1]) <= courseDays;
+          return EXTRA_TABS.includes(name);
+        };
+
+        // ========= 1) Grab UI =========
+        const dropdown  = document.getElementById("daySelector");
+        const flashcard = document.getElementById("flashcard");
+        const cardInner = document.getElementById("flashcardInner");
+        const front     = document.getElementById("cardFront");
+        const back      = document.getElementById("cardBack");
+        const prevBtn   = document.getElementById("prevBtn");
+        const nextBtn   = document.getElementById("nextBtn");
+
+        const shuffleBtn = document.getElementById('shuffleBtn');
+        const modeSelect = document.getElementById('modeSelect');
+        const resetBtn   = document.getElementById('resetProgressBtn');
+        const rateReviewBtn  = document.getElementById('rateReview');
+        const rateLearnedBtn = document.getElementById('rateLearned');
+
+        // Dictionary helper UI
+        const dictHelper = document.getElementById('dictHelper');
+        const dictChoice = document.getElementById('dictChoice');
+        const lookupBtn  = document.getElementById('lookupBtn');
+
+        // Study / Add & Manage UI
+        const studyTab = document.getElementById('studyTab');
+        const manageTab = document.getElementById('manageTab');
+        const studyView = document.getElementById('studyView');
+        const manageView = document.getElementById('manageView');
+        const bridgeSetupWarning = document.getElementById('bridgeSetupWarning');
+        const bridgeSetupMessage = document.getElementById('bridgeSetupMessage');
+        const bridgeTokenInput = document.getElementById('bridgeTokenInput');
+        const connectBridgeBtn = document.getElementById('connectBridgeBtn');
+        const manageControls = document.getElementById('manageControls');
+        const manageDaySelector = document.getElementById('manageDaySelector');
+        const entryForm = document.getElementById('entryForm');
+        const manageWord = document.getElementById('manageWord');
+        const manageDefinition = document.getElementById('manageDefinition');
+        const saveEntryBtn = document.getElementById('saveEntryBtn');
+        const cancelEditBtn = document.getElementById('cancelEditBtn');
+        const manageStatus = document.getElementById('manageStatus');
+        const entryListHeading = document.getElementById('entryListHeading');
+        const entryList = document.getElementById('entryList');
+
+        let cards = []; let viewIndexes = []; let currentIndex = 0; let isFlipped = false; let shuffleOn = false;
+        let bridgeToken = '';
+        let manageReady = false;
+        let editingRow = null;
+        let studyNeedsRefresh = false;
+
+        // --- Duplicate detection (per current deck) ---
+        let duplicateCounts = null;
+        const normTerm = (s) => (s || '').trim().toLowerCase();
+        function buildTermCounts(pairs) {
+          const m = {};
+          for (const p of pairs) {
+            const k = normTerm(p[0]);
+            if (!k) continue;
+            m[k] = (m[k] || 0) + 1;
+          }
+          return m;
+        }
+        function isDuplicate(word) {
+          if (!duplicateCounts) return false;
+          return (duplicateCounts[normTerm(word)] || 0) > 1;
+        }
+
+        // ========= 2) Flip only on card tap =========
+        flashcard.addEventListener("click", (e) => {
+          if (!e.target.closest("button")) {
+            isFlipped = !isFlipped;
+            cardInner.classList.toggle("flipped", isFlipped);
+          }
+        });
+
+        // ========= 3) Progress storage + migration =========
+        const STORAGE_KEY = 'flashcards_progress_v2';
+        const deckKey = () => `deck_${dropdown.value || 'Default'}`;
+        const cardId = (pair) => `${pair[0] || ''}||${pair[1] || ''}`;
+        const loadAll = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; } };
+        const saveAll = (data) => localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        (function migrate(){
+          const all = loadAll(); let changed = false;
+          for (const dk in all) for (const id in all[dk]) {
+            const st = all[dk][id];
+            if (st && st.rating) {
+              if (st.rating === 'unknown' || st.rating === 'soso') { st.rating = 'review'; changed = true; }
+              else if (st.rating === 'known') { st.rating = 'learned'; changed = true; }
+            }
+          }
+          if (changed) saveAll(all);
+        })();
+        const getState = (pair) => {
+          const all = loadAll(); const dk = deckKey(); const id = cardId(pair);
+          return (all[dk] && all[dk][id]) || { rating:'review', last:0 };
+        };
+        const setState = (pair, patch) => {
+          const all = loadAll(); const dk = deckKey(); const id = cardId(pair);
+          all[dk] = all[dk] || {};
+          const prior = getState(pair);
+          all[dk][id] = { ...prior, ...patch, ts: Date.now() };
+          saveAll(all);
+        };
+        const resetDeck = () => { const all = loadAll(); delete all[deckKey()]; saveAll(all); };
+
+        // ========= 4) Filtering + Shuffle =========
+        function filteredIndexes(mode) {
+          if (!Array.isArray(cards)) return [];
+          return cards.reduce((acc, p, i) => {
+            const st = getState(p);
+            if (mode === 'all') acc.push(i);
+            else if (mode === 'review'  && st.rating === 'review')  acc.push(i);
+            else if (mode === 'learned' && st.rating === 'learned') acc.push(i);
+            return acc;
+          }, []);
+        }
+        function shuffleArray(arr) {
+          for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+          }
+          return arr;
+        }
+        function rebuildView(preserveCurrent = false) {
+          const mode = modeSelect.value;
+          const prevPair = cards[viewIndexes[currentIndex] ?? 0];
+          viewIndexes = filteredIndexes(mode);
+          if (viewIndexes.length === 0) viewIndexes = cards.map((_, i) => i);
+          if (shuffleOn) shuffleArray(viewIndexes);
+          if (preserveCurrent && prevPair) {
+            const target = cardId(prevPair);
+            const found = viewIndexes.findIndex(i => cardId(cards[i]) === target);
+            currentIndex = found >= 0 ? found : 0;
+          } else {
+            currentIndex = 0;
+          }
+          renderCurrent();
+        }
+        function renderCurrent() {
+          if (!viewIndexes.length || !cards.length) {
+            front.textContent = "No data available.";
+            back.textContent = "";
+            cardInner.classList.remove("flipped");
+            return;
+          }
+          const idx = viewIndexes[currentIndex] ?? 0;
+          const pair = cards[idx];
+
+          // Front: build with optional triangle
+          front.textContent = "";
+          const word = pair[0] || "";
+          const wordSpan = document.createElement('span');
+          wordSpan.textContent = word;
+          front.appendChild(wordSpan);
+
+          if (isDuplicate(word)) {
+            const flag = document.createElement('span');
+            flag.className = 'dup-flag';
+            flag.title = 'Duplicate word';
+            flag.setAttribute('aria-label', 'Duplicate word');
+            flag.textContent = '⚠️';
+            flag.style.marginLeft = '0.4rem';
+            front.appendChild(flag);
+          }
+
+          // Back
+          back.textContent = pair[1] || "";
+
+          // Keep flip state
+          cardInner.classList.toggle("flipped", isFlipped);
+
+          // 👉 expose current word for dictionary lookup
+          window.currentWord = word;
+        }
+
+        // ========= 5) Wire controls =========
+        nextBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (!viewIndexes.length) return;
+          currentIndex = (currentIndex + 1) % viewIndexes.length;
+          renderCurrent();
+        });
+        prevBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (!viewIndexes.length) return;
+          currentIndex = (currentIndex - 1 + viewIndexes.length) % viewIndexes.length;
+          renderCurrent();
+        });
+        shuffleBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          shuffleOn = !shuffleOn;
+          shuffleBtn.textContent = shuffleOn ? '🔁 Reshuffle' : '🔀 Shuffle';
+          rebuildView(true);
+        });
+        modeSelect.addEventListener('change', () => rebuildView(true));
+        resetBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (confirm('Clear saved progress for this Day?')) { resetDeck(); rebuildView(false); }
+        });
+        const rate = (rating) => {
+          const idx = viewIndexes[currentIndex] ?? 0;
+          const pair = cards[idx];
+          setState(pair, { rating, last: Date.now() });
+          currentIndex = (currentIndex + 1) % viewIndexes.length;
+          renderCurrent();
+        };
+        rateReviewBtn.addEventListener('click',  (e)=>{ e.stopPropagation(); rate('review');  });
+        rateLearnedBtn.addEventListener('click', (e)=>{ e.stopPropagation(); rate('learned'); });
+
+        // ========= 6) Live Study loader via Bridge =========
+        async function loadBySheet(sheetName) {
+          if (!sheetName) {
+            console.error('[Study] Missing sheet name.');
+            front.textContent = "Error loading data.";
+            back.textContent = "";
+            return;
+          }
+
+          front.classList.remove('error');
+          front.textContent = "Loading…";
+          back.textContent = "";
+          cardInner.classList.remove("flipped");
+
+          try {
+            const data = await bridgeRequest({
+              action: 'study',
+              sheet: sheetName
+            });
+
+            cards = Array.isArray(data.cards) ? data.cards : [];
+            duplicateCounts = buildTermCounts(cards);
+            console.log(
+              '[Study] Loaded',
+              sheetName,
+              'cards:',
+              cards.length,
+              'distinct:',
+              Object.keys(duplicateCounts).length
+            );
+
+            isFlipped = false;
+            cardInner.classList.remove("flipped");
+            rebuildView(false);
+          } catch (error) {
+            console.error('[Study] Load error:', error);
+            front.classList.add('error');
+            front.textContent = "Error loading data.\n\n" + error.message;
+            back.textContent = "";
+            viewIndexes = [];
+          }
+        }
+
+        function populateDropdown(names) {
+          dropdown.innerHTML = '';
+
+          const allowedNames = names
+            .filter(isAllowedStudySheet)
+            .sort((a, b) => {
+              const ma = a.match(/^Day\s+(\d+)/i);
+              const mb = b.match(/^Day\s+(\d+)/i);
+
+              if (ma && mb) return +ma[1] - +mb[1];
+              if (ma) return -1;
+              if (mb) return 1;
+              return a.localeCompare(b);
+            });
+
+          console.log('[Study] Available sheets:', allowedNames);
+
+          for (const name of allowedNames) {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = name;
+            dropdown.appendChild(option);
+          }
+        }
+
+        dropdown.addEventListener("change", () => {
+          if (dropdown.value) {
+            loadBySheet(dropdown.value);
+          }
+        });
+
+        // ========= 8) Dictionary lookup (direct vs search with heuristics) =========
+        // URL templates
+        const DICT_DIRECT = {
+          cambridge: (w) => `https://dictionary.cambridge.org/dictionary/learner-english/${encodeURIComponent(w.replace(/\s+/g, '-').toLowerCase())}`,
+          oxford:    (w) => `https://www.oxfordlearnersdictionaries.com/definition/english/${encodeURIComponent(w.replace(/\s+/g, '-').toLowerCase())}`,
+          longman:   (w) => `https://www.ldoceonline.com/dictionary/${encodeURIComponent(w.replace(/\s+/g, '-').toLowerCase())}`,
+        };
+        const DICT_SEARCH = {
+          cambridge: (w) => `https://www.google.com/search?q=${encodeURIComponent('site:dictionary.cambridge.org "' + w + '"')}`,
+          oxford:    (w) => `https://www.google.com/search?q=${encodeURIComponent('site:oxfordlearnersdictionaries.com "' + w + '"')}`,
+          longman:   (w) => `https://www.google.com/search?q=${encodeURIComponent('site:ldoceonline.com "' + w + '"')}`,
+        };
+        const shouldUseSearch = (word) => {
+          if (!word) return true;
+          const w = word.trim();
+          if (/\s/.test(w)) return true;                 // phrases
+          if (/[^\p{L}\p{M}-]/u.test(w)) return true;    // punctuation
+          const lw = w.toLowerCase();
+          if (/(ing|ed|ies|ied|ers|est|s)$/.test(lw) && !/(ss|us|is|as)s$/.test(lw)) return true; // common inflections
+          return false;
+        };
+        const buildDictUrl = (key, word) => shouldUseSearch(word) ? DICT_SEARCH[key](word) : DICT_DIRECT[key](word);
+
+        // Stop clicks on helper from flipping the card
+        dictHelper.addEventListener('click', (e) => e.stopPropagation());
+        dictHelper.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+
+        // Click handler
+        lookupBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const dictKey = dictChoice.value; // cambridge | oxford | longman
+          let word = (window.currentWord || '').trim();
+          if (!word && Array.isArray(cards) && cards.length) {
+            const pair = cards[viewIndexes[currentIndex] ?? 0] || [];
+            word = (pair[0] || '').trim();
+          }
+          if (!word) {
+            alert('No word is selected yet.');
+            return;
+          }
+          const url = buildDictUrl(dictKey, word);
+          window.open(url, '_blank', 'noopener');
+        });
+
+        // ========= 9) Add & Manage bridge =========
+        const BRIDGE_TOKEN_KEY = 'azwb_bridge_token_v1';
+
+        function captureBridgeToken() {
+          const params = new URLSearchParams(location.hash.replace(/^#/, ''));
+          const incoming = (params.get('token') || '').trim();
+
+          if (incoming) {
+            localStorage.setItem(BRIDGE_TOKEN_KEY, incoming);
+            history.replaceState(null, document.title, location.pathname + location.search);
+          }
+
+          return (localStorage.getItem(BRIDGE_TOKEN_KEY) || '').trim();
+        }
+
+        async function loadBridgeStatus() {
+          try {
+            const response = await fetch(BRIDGE_URL, { cache: 'no-store' });
+            const data = await response.json();
+
+            const maxAccessibleDay = Number(data.maxAccessibleDay);
+
+            if (
+              data.ok &&
+              Number.isInteger(maxAccessibleDay) &&
+              maxAccessibleDay >= 1 &&
+              maxAccessibleDay <= 100
+            ) {
+              courseDays = maxAccessibleDay;
+            }
+          } catch (error) {
+            console.warn('[Bridge] Status unavailable; Day access remains locked.', error);
+          }
+        }
+
+        async function bridgeRequest(payload, attempt = 0) {
+          const retryableActions = ['days', 'list', 'study'];
+          const mayRetry = retryableActions.includes(payload.action);
+          const maxAttempts = mayRetry ? 3 : 1;
+
+          try {
+            const response = await fetch(BRIDGE_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify(payload),
+              cache: 'no-store'
+            });
+
+            const responseText = await response.text();
+            let data;
+
+            try {
+              data = JSON.parse(responseText);
+            } catch (error) {
+              throw new Error('The Bridge returned an unexpected response.');
+            }
+
+            if (!data.ok) {
+              throw new Error(
+                data.error || 'The request could not be completed.'
+              );
+            }
+
+            return data;
+          } catch (error) {
+            if (attempt + 1 < maxAttempts) {
+              const delay = 750 * (attempt + 1);
+              await new Promise((resolve) => setTimeout(resolve, delay));
+              return bridgeRequest(payload, attempt + 1);
+            }
+
+            if (!mayRetry) {
+              throw new Error(
+                'The Bridge response was interrupted. The change may still ' +
+                'have been saved. Refresh the list before trying again.'
+              );
+            }
+
+            throw error;
+          }
+        }
+
+        function showBridgeSetup(message) {
+          bridgeSetupMessage.textContent = message || 'This device has not been connected yet.';
+          bridgeSetupWarning.hidden = false;
+          manageControls.hidden = true;
+        }
+
+        function setManageStatus(message, type = '') {
+          manageStatus.textContent = message;
+          manageStatus.className = `manage-status ${type}`.trim();
+        }
+
+        function resetEntryForm() {
+          editingRow = null;
+          entryForm.reset();
+          saveEntryBtn.textContent = 'Add Vocabulary';
+          cancelEditBtn.hidden = true;
+        }
+
+        function setActiveView(view) {
+          const showStudy = view === 'study';
+          studyView.hidden = !showStudy;
+          manageView.hidden = showStudy;
+          studyTab.classList.toggle('active', showStudy);
+          manageTab.classList.toggle('active', !showStudy);
+          studyTab.setAttribute('aria-selected', String(showStudy));
+          manageTab.setAttribute('aria-selected', String(!showStudy));
+
+          if (!showStudy && !manageReady) {
+            initializeManageView();
+          }
+
+          if (showStudy && studyNeedsRefresh && dropdown.value) {
+            studyNeedsRefresh = false;
+            loadBySheet(dropdown.value);
+          }
+        }
+
+        async function initializeManageView() {
+          bridgeSetupWarning.hidden = true;
+          manageControls.hidden = false;
+          setManageStatus('Loading available Days…');
+
+          try {
+            const data = await bridgeRequest({ action: 'days' });
+            manageDaySelector.innerHTML = '';
+
+            data.days.forEach((name) => {
+              const option = document.createElement('option');
+              option.value = name;
+              option.textContent = name;
+              manageDaySelector.appendChild(option);
+            });
+
+            if (!data.days.length) {
+              throw new Error('No released Day sheets were found.');
+            }
+
+            manageReady = true;
+            setManageStatus('');
+            await loadManageEntries();
+          } catch (error) {
+            setManageStatus(error.message, 'error');
+          }
+        }
+
+        connectBridgeBtn.addEventListener('click', async () => {
+          const token = bridgeTokenInput.value.trim();
+
+          if (!token) {
+            bridgeSetupMessage.textContent = 'Please enter the connection code.';
+            return;
+          }
+
+          bridgeToken = token;
+          localStorage.setItem(BRIDGE_TOKEN_KEY, token);
+          bridgeTokenInput.value = '';
+          manageReady = false;
+          await initializeManageView();
+        });
+
+        async function loadManageEntries() {
+          const sheet = manageDaySelector.value;
+          if (!sheet) return;
+
+          entryListHeading.textContent = `Vocabulary for ${sheet}`;
+          entryList.textContent = 'Loading…';
+
+          try {
+            const data = await bridgeRequest({ action: 'list', sheet });
+            renderManageEntries(data.entries || []);
+          } catch (error) {
+            entryList.textContent = '';
+            setManageStatus(error.message, 'error');
+          }
+        }
+
+        function renderManageEntries(entries) {
+          entryList.innerHTML = '';
+
+          if (!entries.length) {
+            const empty = document.createElement('p');
+            empty.textContent = 'No vocabulary has been added to this Day yet.';
+            entryList.appendChild(empty);
+            return;
+          }
+
+          entries.forEach((entry) => {
+            const item = document.createElement('div');
+            item.className = 'entry-item';
+
+            const word = document.createElement('div');
+            word.className = 'entry-word';
+            word.textContent = entry.word;
+
+            const definition = document.createElement('div');
+            definition.className = 'entry-definition';
+            definition.textContent = entry.definition;
+
+            const actions = document.createElement('div');
+            actions.className = 'entry-actions';
+
+            const editButton = document.createElement('button');
+            editButton.type = 'button';
+            editButton.textContent = 'Edit';
+            editButton.addEventListener('click', () => {
+              editingRow = entry.row;
+              manageWord.value = entry.word;
+              manageDefinition.value = entry.definition;
+              saveEntryBtn.textContent = 'Save Changes';
+              cancelEditBtn.hidden = false;
+              manageWord.focus();
+              setManageStatus(`Editing “${entry.word}”`);
+            });
+
+            const deleteButton = document.createElement('button');
+            deleteButton.type = 'button';
+            deleteButton.className = 'delete-entry';
+            deleteButton.textContent = 'Delete';
+            deleteButton.addEventListener('click', async () => {
+              if (!confirm(`Delete “${entry.word}” from ${manageDaySelector.value}?`)) return;
+
+              setManageStatus('Deleting…');
+              try {
+                await bridgeRequest({
+                  action: 'delete',
+                  sheet: manageDaySelector.value,
+                  row: entry.row
+                });
+                studyNeedsRefresh = true;
+                resetEntryForm();
+                setManageStatus('Vocabulary deleted.', 'success');
+                await loadManageEntries();
+              } catch (error) {
+                setManageStatus(error.message, 'error');
+              }
+            });
+
+            actions.append(editButton, deleteButton);
+            item.append(word, definition, actions);
+            entryList.appendChild(item);
+          });
+        }
+
+        studyTab.addEventListener('click', () => setActiveView('study'));
+        manageTab.addEventListener('click', () => setActiveView('manage'));
+
+        manageDaySelector.addEventListener('change', async () => {
+          resetEntryForm();
+          setManageStatus('');
+          await loadManageEntries();
+        });
+
+        cancelEditBtn.addEventListener('click', () => {
+          resetEntryForm();
+          setManageStatus('Edit cancelled.');
+        });
+
+        entryForm.addEventListener('submit', async (event) => {
+          event.preventDefault();
+
+          const word = manageWord.value.trim();
+          const definition = manageDefinition.value.trim();
+          const action = editingRow === null ? 'add' : 'update';
+          const payload = {
+            action,
+            sheet: manageDaySelector.value,
+            word,
+            definition
+          };
+
+          if (editingRow !== null) payload.row = editingRow;
+
+          saveEntryBtn.disabled = true;
+          setManageStatus(action === 'add' ? 'Adding…' : 'Saving changes…');
+
+          try {
+            await bridgeRequest(payload);
+            studyNeedsRefresh = true;
+            resetEntryForm();
+            setManageStatus(
+              action === 'add' ? 'Vocabulary added.' : 'Changes saved.',
+              'success'
+            );
+            await loadManageEntries();
+          } catch (error) {
+            setManageStatus(error.message, 'error');
+          } finally {
+            saveEntryBtn.disabled = false;
+          }
+        });
+
+        // ========= 10) Init =========
+        (async function init(){
+          try {
+            await loadBridgeStatus();
+
+            const data = await bridgeRequest({ action: 'days' });
+            const studySheets = Array.isArray(data.studySheets)
+              ? data.studySheets
+              : data.days || [];
+
+            if (!studySheets.length) {
+              front.classList.add('error');
+              front.textContent =
+                "No accessible Study sheets were found.\n\n" +
+                "Check the administrative Day limit and Bridge deployment.";
+              back.textContent = "";
+              return;
+            }
+
+            populateDropdown(studySheets);
+
+            const availableNames = Array.from(dropdown.options)
+              .map((option) => option.value);
+
+            const defaultName = availableNames.includes('Day 1')
+              ? 'Day 1'
+              : availableNames.includes('A-Z Word Bank')
+                ? 'A-Z Word Bank'
+                : availableNames[0];
+
+            dropdown.value = defaultName;
+            await loadBySheet(defaultName);
+          } catch (err) {
+            console.error('[Init] Startup error:', err);
+            front.classList.add('error');
+            front.textContent =
+              "Startup error.\n\n" + err.message;
+            back.textContent = "";
+          }
+        })();
+      });
+    </script>
+  </div>
+</body>
+</html>
