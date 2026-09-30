@@ -1006,6 +1006,8 @@
         // ========= 10) Init =========
         (async function init(){
           try {
+            const firstDayRead = readPublishedCards('Day 1')
+              .then((pairs) => ({ pairs }), () => null);
             const data = await loadReleasedDays();
             releasedDays.clear();
             data.days.forEach((name) => releasedDays.add(name));
@@ -1034,7 +1036,13 @@
                 : availableNames[0];
 
             dropdown.value = defaultName;
-            await loadBySheet(defaultName);
+            if (defaultName === 'Day 1') {
+              const firstDay = await firstDayRead;
+              if (firstDay && !studyNeedsLive.has(defaultName)) {
+                studyCache.set(defaultName, firstDay.pairs);
+              }
+            }
+            if (dropdown.value === defaultName) await loadBySheet(defaultName);
           } catch (err) {
             console.error('[Init] Startup error:', err);
             front.classList.add('error');
