@@ -870,20 +870,87 @@
           await initializeManageView();
         });
 
+
+        const manageCache = new Map();
+        const managePending = new Map();
+        const manageVersions = new Map();
+        let manageLoadId = 0;
+
         async function loadManageEntries() {
           const sheet = manageDaySelector.value;
           if (!sheet) return;
-
+          const loadId = ++manageLoadId;
           entryListHeading.textContent = `Vocabulary for ${sheet}`;
+          if (manageCache.has(sheet)) {
+            renderManageEntries(manageCache.get(sheet));
+            setManageStatus('');
+            return;
+          }
           entryList.textContent = 'Loading…';
-
+          const version = manageVersions.get(sheet) || 0;
           try {
-            const data = await bridgeRequest({ action: 'list', sheet });
-            renderManageEntries(data.entries || []);
+            if (!managePending.has(sheet)) {
+              const pending = bridgeRequest({ action: 'list', sheet })
+                .then((data) => {
+                  if ((manageVersions.get(sheet) || 0) === version) {
+                    manageCache.set(sheet, data.entries);
+                  }
+                  return data.entries;
+                });
+              managePending.set(sheet, pending);
+              pending.finally(() => {
+                if (managePending.get(sheet) === pending) managePending.delete(sheet);
+              }).catch(() => {});
+            }
+            const entries = await managePending.get(sheet);
+            if (loadId !== manageLoadId || manageDaySelector.value !== sheet ||
+                (manageVersions.get(sheet) || 0) !== version) return;
+            renderManageEntries(entries);
+            setManageStatus('');
           } catch (error) {
+            if (loadId !== manageLoadId || manageDaySelector.value !== sheet ||
+                (manageVersions.get(sheet) || 0) !== version) return;
             entryList.textContent = '';
             setManageStatus(error.message, 'error');
           }
+        }
+
+        function beginVocabularyChange(sheet) {
+          invalidateStudyData(sheet);
+          manageVersions.set(sheet, (manageVersions.get(sheet) || 0) + 1);
+          managePending.delete(sheet);
+        }
+
+        function applyConfirmedChange(payload, result) {
+          const sheet = payload.sheet;
+          const row = Number(result.row);
+          if (!manageCache.has(sheet) || !Number.isInteger(row) || row < 2) {
+            manageCache.delete(sheet);
+            return false;
+          }
+          manageVersions.set(sheet, (manageVersions.get(sheet) || 0) + 1);
+          managePending.delete(sheet);
+          studyVersions.set(sheet, (studyVersions.get(sheet) || 0) + 1);
+          studyPending.delete(sheet);
+          let entries = manageCache.get(sheet).filter((entry) => entry.row !== row);
+          if (payload.action !== 'delete') {
+            entries.push({ row, word: payload.word, definition: payload.definition });
+          }
+          entries.sort((a, b) => a.row - b.row);
+          manageCache.set(sheet, entries);
+          const pairs = entries
+            .filter((entry) => entry.word && entry.definition)
+            .map((entry) => [entry.word, entry.definition]);
+          studyCache.set(sheet, pairs);
+          studyNeedsLive.delete(sheet);
+          if (manageDaySelector.value === sheet) renderManageEntries(entries);
+          return true;
+        }
+
+        function forgetUnconfirmedChange(sheet) {
+          manageCache.delete(sheet);
+          managePending.delete(sheet);
+          manageVersions.set(sheet, (manageVersions.get(sheet) || 0) + 1);
         }
 
         function renderManageEntries(entries) {
@@ -932,18 +999,17 @@
               if (!confirm(`Delete “${entry.word}” from ${manageDaySelector.value}?`)) return;
 
               setManageStatus('Deleting…');
+              const payload = { action: 'delete', sheet: manageDaySelector.value, row: entry.row };
               try {
-                invalidateStudyData(manageDaySelector.value);
-                await bridgeRequest({
-                  action: 'delete',
-                  sheet: manageDaySelector.value,
-                  row: entry.row
-                });
+                beginVocabularyChange(payload.sheet);
+                const result = await bridgeRequest(payload);
+                const listUpdated = applyConfirmedChange(payload, result);
                 studyNeedsRefresh = true;
                 resetEntryForm();
                 setManageStatus('Vocabulary deleted.', 'success');
-                await loadManageEntries();
+                if (!listUpdated) await loadManageEntries();
               } catch (error) {
+                forgetUnconfirmedChange(payload.sheet);
                 setManageStatus(error.message, 'error');
               }
             });
@@ -987,16 +1053,18 @@
           setManageStatus(action === 'add' ? 'Adding…' : 'Saving changes…');
 
           try {
-            invalidateStudyData(manageDaySelector.value);
-            await bridgeRequest(payload);
+            beginVocabularyChange(payload.sheet);
+            const result = await bridgeRequest(payload);
+            const listUpdated = applyConfirmedChange(payload, result);
             studyNeedsRefresh = true;
             resetEntryForm();
             setManageStatus(
               action === 'add' ? 'Vocabulary added.' : 'Changes saved.',
               'success'
             );
-            await loadManageEntries();
+            if (!listUpdated) await loadManageEntries();
           } catch (error) {
+            forgetUnconfirmedChange(payload.sheet);
             setManageStatus(error.message, 'error');
           } finally {
             saveEntryBtn.disabled = false;
