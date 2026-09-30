@@ -605,12 +605,15 @@
           const retryableActions = ['days', 'list', 'study'];
           const mayRetry = retryableActions.includes(payload.action);
           const maxAttempts = mayRetry ? 3 : 1;
+          const controller = mayRetry ? new AbortController() : null;
+          const timeout = controller ? setTimeout(() => controller.abort(), 18000) : null;
 
           try {
             let response = await fetch(BRIDGE_URL, {
               method: 'POST',
               headers: { 'Content-Type': 'text/plain;charset=utf-8' },
               body: JSON.stringify(payload),
+              signal: controller ? controller.signal : undefined,
               cache: 'no-store'
             });
 
@@ -623,7 +626,7 @@
                   responseUrl.pathname === '/macros/echo' &&
                   responseUrl.searchParams.has('user_content_key')) {
                 await new Promise((resolve) => setTimeout(resolve, 3000));
-                response = await fetch(responseUrl.href, { cache: 'no-store' });
+                response = await fetch(responseUrl.href, { cache: 'no-store', signal: controller.signal });
               }
             }
 
@@ -666,6 +669,7 @@
 
             return data;
           } catch (error) {
+            if (timeout !== null) clearTimeout(timeout);
             if (attempt + 1 < maxAttempts) {
               const delay = 750 * (attempt + 1);
               await new Promise((resolve) => setTimeout(resolve, delay));
@@ -679,7 +683,12 @@
               );
             }
 
+            if (error.name === 'AbortError') {
+              throw new Error('The vocabulary connection took too long. Please reload to try again.');
+            }
             throw error;
+          } finally {
+            if (timeout !== null) clearTimeout(timeout);
           }
         }
 
