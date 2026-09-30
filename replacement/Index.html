@@ -331,8 +331,8 @@
 
         // ========= 3) Progress storage + migration =========
         const STORAGE_KEY = 'flashcards_progress_v2';
-        const deckKey = () => `deck_${dropdown.value || 'Default'}`;
-        const cardId = (pair) => `${pair[0] || ''}||${pair[1] || ''}`;
+        const deckKey = () => ("deck_" + (dropdown.value || 'Default'));
+        const cardId = (pair) => ((pair[0] || '') + "||" + (pair[1] || ''));
         const loadAll = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; } };
         const saveAll = (data) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (error) { console.warn('Progress could not be stored on this browser.', error); } };
         (function migrate(){
@@ -544,14 +544,14 @@
         // ========= 8) Dictionary lookup (direct vs search with heuristics) =========
         // URL templates
         const DICT_DIRECT = {
-          cambridge: (w) => `https://dictionary.cambridge.org/dictionary/learner-english/${encodeURIComponent(w.replace(/\s+/g, '-').toLowerCase())}`,
-          oxford:    (w) => `https://www.oxfordlearnersdictionaries.com/definition/english/${encodeURIComponent(w.replace(/\s+/g, '-').toLowerCase())}`,
-          longman:   (w) => `https://www.ldoceonline.com/dictionary/${encodeURIComponent(w.replace(/\s+/g, '-').toLowerCase())}`,
+          cambridge: (w) => ("https://dictionary.cambridge.org/dictionary/learner-english/" + (encodeURIComponent(w.replace(/\s+/g, '-').toLowerCase()))),
+          oxford:    (w) => ("https://www.oxfordlearnersdictionaries.com/definition/english/" + (encodeURIComponent(w.replace(/\s+/g, '-').toLowerCase()))),
+          longman:   (w) => ("https://www.ldoceonline.com/dictionary/" + (encodeURIComponent(w.replace(/\s+/g, '-').toLowerCase()))),
         };
         const DICT_SEARCH = {
-          cambridge: (w) => `https://www.google.com/search?q=${encodeURIComponent('site:dictionary.cambridge.org "' + w + '"')}`,
-          oxford:    (w) => `https://www.google.com/search?q=${encodeURIComponent('site:oxfordlearnersdictionaries.com "' + w + '"')}`,
-          longman:   (w) => `https://www.google.com/search?q=${encodeURIComponent('site:ldoceonline.com "' + w + '"')}`,
+          cambridge: (w) => ("https://www.google.com/search?q=" + (encodeURIComponent('site:dictionary.cambridge.org "' + w + '"'))),
+          oxford:    (w) => ("https://www.google.com/search?q=" + (encodeURIComponent('site:oxfordlearnersdictionaries.com "' + w + '"'))),
+          longman:   (w) => ("https://www.google.com/search?q=" + (encodeURIComponent('site:ldoceonline.com "' + w + '"'))),
         };
         const shouldUseSearch = (word) => {
           if (!word) return true;
@@ -648,7 +648,7 @@
 
         function setManageStatus(message, type = '') {
           manageStatus.textContent = message;
-          manageStatus.className = `manage-status ${type}`.trim();
+          manageStatus.className = ("manage-status " + (type)).trim();
         }
 
         function resetEntryForm() {
@@ -711,7 +711,7 @@
           const sheet = manageDaySelector.value;
           if (!sheet) return;
 
-          entryListHeading.textContent = `Vocabulary for ${sheet}`;
+          entryListHeading.textContent = ("Vocabulary for " + (sheet));
           entryList.textContent = 'Loading…';
 
           try {
@@ -760,7 +760,7 @@
               saveEntryBtn.textContent = 'Save Changes';
               cancelEditBtn.hidden = false;
               manageWord.focus();
-              setManageStatus(`Editing “${entry.word}”`);
+              setManageStatus(("Editing “" + (entry.word) + "”"));
             });
 
             const deleteButton = document.createElement('button');
@@ -768,7 +768,7 @@
             deleteButton.className = 'delete-entry';
             deleteButton.textContent = 'Delete';
             deleteButton.addEventListener('click', async () => {
-              if (!confirm(`Delete “${entry.word}” from ${manageDaySelector.value}?`)) return;
+              if (!confirm(("Delete “" + (entry.word) + "” from " + (manageDaySelector.value) + "?"))) return;
 
               setManageStatus('Deleting…');
               try {
