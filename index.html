@@ -468,45 +468,133 @@
         rateReviewBtn.addEventListener('click',  (e)=>{ e.stopPropagation(); rate('review');  });
         rateLearnedBtn.addEventListener('click', (e)=>{ e.stopPropagation(); rate('learned'); });
 
-        // ========= 6) Live Study loader via Bridge =========
+        // ========= 6) Published Study reads with session reuse =========
+
+        const STUDY_GIDS = {"Day 1":"0","Day 2":"852548783","Day 3":"126894906","Day 4":"1761125923","Day 5":"1844825717","Day 6":"534178421","Day 7":"876454039","Day 8":"1618830889","Day 9":"1258211448","Day 10":"1303355796","Day 11":"1650085929","Day 12":"458078023","Day 13":"101007692","Day 14":"1396319710","Day 15":"1344356017","Day 16":"905129722","Day 17":"1213698638","Day 18":"773486233","Day 19":"399770021","Day 20":"1887860545","A-Z Word Bank":"244262932","Everyday Phrasal Verbs":"104187808","Business Phrasal Verbs":"887218085","Proverbs":"1337097424","Day 21":"1018851803","Day 22":"1886085882","Day 23":"909447727","Day 24":"95175758","Day 25":"1271613542","Day 26":"1793940656","Day 27":"2029826003","Day 28":"1492775333","Day 29":"2049510630","Day 30":"834192092","Day 31":"477071439","Day 32":"1531258494","Day 33":"1717129615","Day 34":"263522865","Day 35":"1999821782","Day 36":"2102078518","Day 37":"1822688970","Day 38":"806168720","Day 39":"1065052384","Day 40":"633801723","Day 41":"1097216678","Day 42":"1342209826","Day 43":"2131677157","Day 44":"1028416653","Day 45":"721598257","Day 46":"1961316860","Day 47":"1263895587","Day 48":"338211451","Day 49":"307351149","Day 50":"1008236923","Day 51":"234687202","Day 52":"856972323","Day 53":"595391997","Day 54":"1436250063","Day 55":"784598036","Day 56":"1984733918","Day 57":"1199818301","Day 58":"155536836","Day 59":"1774038716","Day 60":"2078300140","Day 61":"52782960","Day 62":"1183649160","Day 63":"610062498","Day 64":"1165166979","Day 65":"243625767","Day 66":"1929063167","Day 67":"1026141864","Day 68":"1146006921","Day 69":"1884371313","Day 70":"449486075","Day 71":"1697197134","Day 72":"764153221","Day 73":"440710172","Day 74":"354345941","Day 75":"876892388","Day 76":"778321173","Day 77":"134669988","Day 78":"604869118","Day 79":"931648882","Day 80":"817887763","Day 81":"1984068353","Day 82":"1131931214","Day 83":"1456337151","Day 84":"1581682551","Day 85":"1115657563","Day 86":"484316380","Day 87":"393090069","Day 88":"392329735","Day 89":"460969374","Day 90":"83029604","Day 91":"1815624102","Day 92":"941485836","Day 93":"382756531","Day 94":"1852889877","Day 95":"115665328","Day 96":"2033614326","Day 97":"2132760898","Day 98":"283939914","Day 99":"2033622471","Day 100":"140942988"};
+        const studyCache = new Map();
+        const studyPending = new Map();
+        const studyVersions = new Map();
+        const studyNeedsLive = new Set();
+        let studyLoadId = 0;
+        let releasedDayRequest = null;
+
+        function loadReleasedDays() {
+          if (!releasedDayRequest) {
+            releasedDayRequest = bridgeRequest({ action: 'days' }).catch((error) => {
+              releasedDayRequest = null;
+              throw error;
+            });
+          }
+          return releasedDayRequest;
+        }
+
+        function invalidateStudyData(sheet) {
+          for (const name of [sheet, 'A-Z Word Bank']) {
+            studyCache.delete(name);
+            studyPending.delete(name);
+            studyVersions.set(name, (studyVersions.get(name) || 0) + 1);
+            studyNeedsLive.add(name);
+          }
+        }
+
+        function parsePublishedCards(text, delimiter) {
+          const rows = [];
+          let row = [], field = '', quoted = false;
+          for (let i = 0; i < text.length; i++) {
+            const ch = text[i];
+            if (ch === '"') {
+              if (quoted && text[i + 1] === '"') { field += '"'; i++; }
+              else if (quoted) quoted = false;
+              else if (!field) quoted = true;
+              else field += '"';
+            } else if (ch === delimiter && !quoted) {
+              row.push(field); field = '';
+            } else if ((ch === '\n' || ch === '\r') && !quoted) {
+              if (ch === '\r' && text[i + 1] === '\n') i++;
+              row.push(field); rows.push(row); row = []; field = '';
+            } else field += ch;
+          }
+          if (field || row.length) { row.push(field); rows.push(row); }
+          if (quoted) throw new Error('The published vocabulary response was incomplete.');
+          const header = rows.shift() || [];
+          if (!/word/i.test(header[0] || '') || !/definition/i.test(header[1] || '')) {
+            throw new Error('The published Sheet did not return vocabulary data.');
+          }
+          return rows.map((r) => [(r[0] || '').trim(), (r[1] || '').trim()])
+            .filter((r) => r[0] && r[1]);
+        }
+
+        async function readPublishedCards(sheet) {
+          const gid = STUDY_GIDS[sheet];
+          if (gid === undefined) throw new Error('This Study sheet has no published tab ID.');
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 10000);
+          try {
+            const response = await fetch(
+              PUBLISH_URL + '?gid=' + encodeURIComponent(gid) + '&single=true&output=tsv',
+              { cache: 'no-cache', signal: controller.signal }
+            );
+            if (!response.ok) throw new Error('The published vocabulary could not be loaded.');
+            return parsePublishedCards(await response.text(), '\t');
+          } finally {
+            clearTimeout(timeout);
+          }
+        }
+
+        async function getStudyCards(sheet) {
+          if (!isAllowedStudySheet(sheet)) throw new Error('This Study sheet has not been released.');
+          if (studyCache.has(sheet)) return studyCache.get(sheet);
+          if (studyPending.has(sheet)) return studyPending.get(sheet);
+          const version = studyVersions.get(sheet) || 0;
+          const pending = (async () => {
+            let pairs;
+            if (studyNeedsLive.has(sheet)) {
+              pairs = (await bridgeRequest({ action: 'study', sheet })).cards;
+            } else {
+              try { pairs = await readPublishedCards(sheet); }
+              catch (error) {
+                console.warn('[Study] Published read failed; trying live vocabulary.', error);
+                pairs = (await bridgeRequest({ action: 'study', sheet })).cards;
+              }
+            }
+            if ((studyVersions.get(sheet) || 0) === version) {
+              studyCache.set(sheet, pairs);
+              studyNeedsLive.delete(sheet);
+            }
+            return pairs;
+          })();
+          studyPending.set(sheet, pending);
+          try { return await pending; }
+          finally { if (studyPending.get(sheet) === pending) studyPending.delete(sheet); }
+        }
+
         async function loadBySheet(sheetName) {
-          if (!sheetName) {
-            console.error('[Study] Missing sheet name.');
-            front.textContent = "Error loading data.";
-            back.textContent = "";
+          const loadId = ++studyLoadId;
+          if (!sheetName || !isAllowedStudySheet(sheetName)) {
+            front.textContent = 'This Study sheet is not available.';
+            back.textContent = '';
             return;
           }
-
           front.classList.remove('error');
-          front.textContent = "Loading…";
-          back.textContent = "";
-          cardInner.classList.remove("flipped");
-
+          cards = []; viewIndexes = [];
+          front.textContent = 'Loading…';
+          back.textContent = '';
+          cardInner.classList.remove('flipped');
           try {
-            const data = await bridgeRequest({
-              action: 'study',
-              sheet: sheetName
-            });
-
-            cards = Array.isArray(data.cards) ? data.cards : [];
+            const pairs = await getStudyCards(sheetName);
+            if (loadId !== studyLoadId || dropdown.value !== sheetName) return;
+            cards = pairs;
             duplicateCounts = buildTermCounts(cards);
-            console.log(
-              '[Study] Loaded',
-              sheetName,
-              'cards:',
-              cards.length,
-              'distinct:',
-              Object.keys(duplicateCounts).length
-            );
-
+            console.log('[Study] Loaded', sheetName, 'cards:', cards.length);
             isFlipped = false;
-            cardInner.classList.remove("flipped");
+            cardInner.classList.remove('flipped');
             rebuildView(false);
           } catch (error) {
+            if (loadId !== studyLoadId || dropdown.value !== sheetName) return;
             console.error('[Study] Load error:', error);
             front.classList.add('error');
-            front.textContent = "Error loading data.\n\n" + error.message;
-            back.textContent = "";
+            front.textContent = 'Error loading data.\n\n' + error.message;
+            back.textContent = '';
             viewIndexes = [];
           }
         }
@@ -745,7 +833,7 @@
           setManageStatus('Loading available Days…');
 
           try {
-            const data = await bridgeRequest({ action: 'days' });
+            const data = await loadReleasedDays();
             manageDaySelector.innerHTML = '';
 
             data.days.forEach((name) => {
@@ -845,6 +933,7 @@
 
               setManageStatus('Deleting…');
               try {
+                invalidateStudyData(manageDaySelector.value);
                 await bridgeRequest({
                   action: 'delete',
                   sheet: manageDaySelector.value,
@@ -898,6 +987,7 @@
           setManageStatus(action === 'add' ? 'Adding…' : 'Saving changes…');
 
           try {
+            invalidateStudyData(manageDaySelector.value);
             await bridgeRequest(payload);
             studyNeedsRefresh = true;
             resetEntryForm();
@@ -916,7 +1006,7 @@
         // ========= 10) Init =========
         (async function init(){
           try {
-            const data = await bridgeRequest({ action: 'days' });
+            const data = await loadReleasedDays();
             releasedDays.clear();
             data.days.forEach((name) => releasedDays.add(name));
             const studySheets = Array.isArray(data.studySheets)
