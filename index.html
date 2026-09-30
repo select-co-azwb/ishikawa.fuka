@@ -609,10 +609,16 @@
           const timeout = controller ? setTimeout(() => controller.abort(), 18000) : null;
 
           try {
-            let response = await fetch(BRIDGE_URL, {
-              method: 'POST',
-              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-              body: JSON.stringify(payload),
+            const requestUrl = new URL(BRIDGE_URL);
+            if (mayRetry) {
+              requestUrl.searchParams.set('action', payload.action);
+              if (payload.sheet) requestUrl.searchParams.set('sheet', payload.sheet);
+              requestUrl.searchParams.set('_request', Date.now() + '-' + Math.random().toString(36).slice(2));
+            }
+            let response = await fetch(requestUrl.href, {
+              method: mayRetry ? 'GET' : 'POST',
+              headers: mayRetry ? undefined : { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: mayRetry ? undefined : JSON.stringify(payload),
               signal: controller ? controller.signal : undefined,
               cache: 'no-store'
             });
@@ -647,6 +653,10 @@
               throw new Error(
                 data.error || 'The request could not be completed.'
               );
+            }
+
+            if (data.action !== payload.action || (payload.sheet && data.sheet !== payload.sheet)) {
+              throw new Error('The Bridge returned a response for a different request.');
             }
 
             if (payload.action === 'days' && (
