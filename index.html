@@ -59,6 +59,7 @@
       align-items:center;
       margin: 12px 0 10px;
     }
+    .helper[hidden] { display:none; }
     .helper select,
     .helper button {
       padding:10px 14px;
@@ -180,6 +181,13 @@
 
     <div class="study-controls">
       <div class="row">
+        <label for="directionSelect">Study direction:</label>
+        <select id="directionSelect">
+          <option value="word">Word → Definition</option>
+          <option value="definition">Definition → Word</option>
+        </select>
+      </div>
+      <div class="row">
         <button id="shuffleBtn" title="Shuffle order">🔀 Shuffle</button>
         <label for="modeSelect">Study set:</label>
         <select id="modeSelect">
@@ -252,11 +260,11 @@
         const BRIDGE_URL = 'https://script.google.com/macros/s/AKfycbyRW2zCk_P38kWXCA41k7SWk7trBxiwxqY3K5nrS2jltqvTYYrrA_uZzC0z020h5nsv/exec';
 
         // Allow-list
-        let courseDays = 0; // Safe fallback; the bridge supplies the administrative limit.
+        const releasedDays = new Set(); // Only Days explicitly released by the Bridge.
         const EXTRA_TABS = ["A-Z Word Bank", "Everyday Phrasal Verbs", "Business Phrasal Verbs", "Proverbs"];
         const isAllowedStudySheet = (name) => {
           const match = name.match(/^Day\s+(\d+)$/i);
-          if (match) return Number(match[1]) <= courseDays;
+          if (match) return releasedDays.has(name);
           return EXTRA_TABS.includes(name);
         };
 
@@ -269,6 +277,7 @@
         const prevBtn   = document.getElementById("prevBtn");
         const nextBtn   = document.getElementById("nextBtn");
 
+        const directionSelect = document.getElementById('directionSelect');
         const shuffleBtn = document.getElementById('shuffleBtn');
         const modeSelect = document.getElementById('modeSelect');
         const resetBtn   = document.getElementById('resetProgressBtn');
@@ -328,26 +337,17 @@
           if (!e.target.closest("button")) {
             isFlipped = !isFlipped;
             cardInner.classList.toggle("flipped", isFlipped);
+            updateDictionaryVisibility();
           }
         });
 
-        // ========= 3) Progress storage + migration =========
-        const STORAGE_KEY = 'flashcards_progress_v2';
-        const deckKey = () => `deck_${dropdown.value || 'Default'}`;
+        // ========= 3) Progress storage by direction =========
+        // v3 starts ratings fresh; existing vocabulary remains in the Sheet.
+        const STORAGE_KEY = 'flashcards_progress_v3';
+        const deckKey = () => `deck_${dropdown.value || 'Default'}_${directionSelect.value}`;
         const cardId = (pair) => `${pair[0] || ''}||${pair[1] || ''}`;
         const loadAll = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; } };
         const saveAll = (data) => localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-        (function migrate(){
-          const all = loadAll(); let changed = false;
-          for (const dk in all) for (const id in all[dk]) {
-            const st = all[dk][id];
-            if (st && st.rating) {
-              if (st.rating === 'unknown' || st.rating === 'soso') { st.rating = 'review'; changed = true; }
-              else if (st.rating === 'known') { st.rating = 'learned'; changed = true; }
-            }
-          }
-          if (changed) saveAll(all);
-        })();
         const getState = (pair) => {
           const all = loadAll(); const dk = deckKey(); const id = cardId(pair);
           return (all[dk] && all[dk][id]) || { rating:'review', last:0 };
@@ -383,7 +383,6 @@
           const mode = modeSelect.value;
           const prevPair = cards[viewIndexes[currentIndex] ?? 0];
           viewIndexes = filteredIndexes(mode);
-          if (viewIndexes.length === 0) viewIndexes = cards.map((_, i) => i);
           if (shuffleOn) shuffleArray(viewIndexes);
           if (preserveCurrent && prevPair) {
             const target = cardId(prevPair);
@@ -396,20 +395,31 @@
         }
         function renderCurrent() {
           if (!viewIndexes.length || !cards.length) {
-            front.textContent = "No data available.";
+            front.textContent = cards.length
+              ? "No cards in this study set for this direction."
+              : "No data available.";
             back.textContent = "";
+            isFlipped = false;
             cardInner.classList.remove("flipped");
+            updateDictionaryVisibility();
             return;
           }
           const idx = viewIndexes[currentIndex] ?? 0;
           const pair = cards[idx];
 
-          // Front: build with optional triangle
-          front.textContent = "";
           const word = pair[0] || "";
+          const definition = pair[1] || "";
+          const reverse = directionSelect.value === 'definition';
+
+          front.textContent = "";
+          back.textContent = "";
+          const wordFace = reverse ? back : front;
+          const definitionFace = reverse ? front : back;
+          definitionFace.textContent = definition;
+
           const wordSpan = document.createElement('span');
           wordSpan.textContent = word;
-          front.appendChild(wordSpan);
+          wordFace.appendChild(wordSpan);
 
           if (isDuplicate(word)) {
             const flag = document.createElement('span');
@@ -418,17 +428,17 @@
             flag.setAttribute('aria-label', 'Duplicate word');
             flag.textContent = '⚠️';
             flag.style.marginLeft = '0.4rem';
-            front.appendChild(flag);
+            wordFace.appendChild(flag);
           }
 
-          // Back
-          back.textContent = pair[1] || "";
-
-          // Keep flip state
           cardInner.classList.toggle("flipped", isFlipped);
-
-          // 👉 expose current word for dictionary lookup
           window.currentWord = word;
+          updateDictionaryVisibility();
+        }
+
+        function updateDictionaryVisibility() {
+          // In reverse study, looking up the word before flipping reveals the answer.
+          dictHelper.hidden = directionSelect.value === 'definition' && !isFlipped;
         }
 
         // ========= 5) Wire controls =========
@@ -447,15 +457,21 @@
         shuffleBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           shuffleOn = !shuffleOn;
-          shuffleBtn.textContent = shuffleOn ? '🔁 Reshuffle' : '🔀 Shuffle';
+          shuffleBtn.textContent = shuffleOn ? '🔁 Original Order' : '🔀 Shuffle';
+          shuffleBtn.title = shuffleOn ? 'Return cards to original order' : 'Shuffle order';
           rebuildView(true);
         });
-        modeSelect.addEventListener('change', () => rebuildView(true));
+        modeSelect.addEventListener('change', () => { isFlipped = false; rebuildView(true); });
+        directionSelect.addEventListener('change', () => {
+          isFlipped = false;
+          rebuildView(false);
+        });
         resetBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          if (confirm('Clear saved progress for this Day?')) { resetDeck(); rebuildView(false); }
+          if (confirm('Clear saved progress for this study set and direction?')) { resetDeck(); isFlipped = false; rebuildView(false); }
         });
         const rate = (rating) => {
+          if (!viewIndexes.length || !cards.length) return;
           const idx = viewIndexes[currentIndex] ?? 0;
           const pair = cards[idx];
           setState(pair, { rating, last: Date.now() });
@@ -598,26 +614,6 @@
           return (localStorage.getItem(BRIDGE_TOKEN_KEY) || '').trim();
         }
 
-        async function loadBridgeStatus() {
-          try {
-            const response = await fetch(BRIDGE_URL, { cache: 'no-store' });
-            const data = await response.json();
-
-            const maxAccessibleDay = Number(data.maxAccessibleDay);
-
-            if (
-              data.ok &&
-              Number.isInteger(maxAccessibleDay) &&
-              maxAccessibleDay >= 1 &&
-              maxAccessibleDay <= 100
-            ) {
-              courseDays = maxAccessibleDay;
-            }
-          } catch (error) {
-            console.warn('[Bridge] Status unavailable; Day access remains locked.', error);
-          }
-        }
-
         async function bridgeRequest(payload, attempt = 0) {
           const retryableActions = ['days', 'list', 'study'];
           const mayRetry = retryableActions.includes(payload.action);
@@ -644,6 +640,19 @@
               throw new Error(
                 data.error || 'The request could not be completed.'
               );
+            }
+
+            if (payload.action === 'days' && (
+              data.action !== 'days' ||
+              !Array.isArray(data.days) ||
+              !data.days.every((name) => typeof name === 'string' &&
+                /^Day\s+([1-9]\d?|100)$/.test(name)) ||
+              (data.studySheets !== undefined && (
+                !Array.isArray(data.studySheets) ||
+                !data.studySheets.every((name) => typeof name === 'string')
+              ))
+            )) {
+              throw new Error('The Bridge did not return the released Day list.');
             }
 
             return data;
@@ -879,9 +888,9 @@
         // ========= 10) Init =========
         (async function init(){
           try {
-            await loadBridgeStatus();
-
             const data = await bridgeRequest({ action: 'days' });
+            releasedDays.clear();
+            data.days.forEach((name) => releasedDays.add(name));
             const studySheets = Array.isArray(data.studySheets)
               ? data.studySheets
               : data.days || [];
